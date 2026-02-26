@@ -2,7 +2,6 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, Image, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '../../../src/stores/authStore';
@@ -29,7 +28,6 @@ function SettingsRow({
 export default function SettingsScreen() {
   const { owner, signOut, isLoading, updateOwnerProfile, fetchOwnerProfile } = useAuthStore();
   const { t, language, setLanguage } = useI18n();
-  const [copied, setCopied] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [fullName, setFullName] = useState(owner?.full_name || '');
@@ -97,21 +95,6 @@ export default function SettingsScreen() {
     } finally {
       setUploadingPhoto(false);
     }
-  };
-
-  // Generate maintenance request link using owner's ID
-  const maintenanceLink = owner?.id
-    ? `https://domus.app/maintenance/${owner.id}`
-    : '';
-
-  const handleCopyMaintenanceLink = async () => {
-    if (!maintenanceLink) return;
-
-    await Clipboard.setStringAsync(maintenanceLink);
-    setCopied(true);
-    Alert.alert(t.settings.linkCopied, t.settings.linkCopiedDesc);
-
-    setTimeout(() => setCopied(false), 3000);
   };
 
   const handleSaveProfile = async () => {
@@ -568,46 +551,6 @@ const styles = StyleSheet.create({
   languageTextActive: {
     color: colors.background,
     fontWeight: '600',
-  },
-  linkSection: {
-    gap: spacing.md,
-  },
-  linkInfo: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  linkTextContainer: {
-    flex: 1,
-  },
-  linkTitle: {
-    ...typography.body,
-    fontWeight: '600',
-    color: colors.text.primary,
-  },
-  linkDescription: {
-    ...typography.caption,
-    color: colors.text.secondary,
-    marginTop: spacing.xs,
-  },
-  copyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#facc15',
-  },
-  copyText: {
-    ...typography.bodySmall,
-    fontWeight: '600',
-    color: '#facc15',
-  },
-  copyTextSuccess: {
-    color: colors.success.main,
   },
   signOutSection: {
     marginTop: spacing.xl,

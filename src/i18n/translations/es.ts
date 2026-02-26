@@ -257,7 +257,7 @@ export const es: Translations = {
     linkCopiedDesc: 'El enlace de solicitud de mantenimiento se copió al portapapeles. Compártelo con tus inquilinos.',
     app: 'App',
     version: 'Versión',
-    footer: 'Domus - Administración de Propiedades\nHecho con cariño para propietarios',
+    footer: 'Domia - Administración de Propiedades',
   },
 
   // Notifications / Connection Requests

@@ -255,7 +255,7 @@ export const en = {
     linkCopiedDesc: 'Maintenance request link has been copied to clipboard. Share it with your tenants.',
     app: 'App',
     version: 'Version',
-    footer: 'Domus - Property Management\nMade with care for property owners',
+    footer: 'Domia - Property Management',
   },
 
   // Notifications / Connection Requests
