@@ -18,7 +18,7 @@ import { useAuthStore } from '../../../src/stores/authStore';
 import { useI18n } from '../../../src/i18n';
 import { Card, Button, Badge } from '../../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../../src/constants/theme';
-import { ConnectionRequest, Property, Unit } from '../../../src/types';
+import { ConnectionRequest, Unit } from '../../../src/types';
 import { formatMonthlyRent } from '../../../src/utils/currency';
 
 interface ConnectionRequestWithDetails extends ConnectionRequest {
@@ -34,6 +34,7 @@ type UnitForModal = Pick<Unit, 'id' | 'unit_number' | 'status' | 'rent_amount' |
   tenants?: { id: string; status: string }[];
 };
 
+type Tab = 'pending' | 'approved' | 'rejected';
 
 export default function NotificationsScreen() {
   const { owner } = useAuthStore();
@@ -43,6 +44,7 @@ export default function NotificationsScreen() {
   const [refreshingUnits, setRefreshingUnits] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<ConnectionRequestWithDetails | null>(null);
   const [showUnitModal, setShowUnitModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>('pending');
 
   const {
     data: requests,
@@ -80,7 +82,6 @@ export default function NotificationsScreen() {
     if (!owner?.id) return;
     setLoadingUnits(true);
     try {
-      // Step 1: get all properties for this owner
       const { data: propertiesData, error: propError } = await supabase
         .from('properties')
         .select('id, name')
@@ -98,7 +99,6 @@ export default function NotificationsScreen() {
         propertiesData.map((p: any) => [p.id, p.name])
       );
 
-      // Step 2: get all units for those properties
       const { data: unitsData, error: unitError } = await supabase
         .from('units')
         .select('id, unit_number, status, rent_amount, currency, property_id')
@@ -106,7 +106,6 @@ export default function NotificationsScreen() {
 
       if (unitError) throw unitError;
 
-      // Step 3: get all ACTIVE tenant unit_ids for this owner
       const { data: activeTenantsData, error: tenantError } = await supabase
         .from('tenants')
         .select('unit_id')
@@ -136,7 +135,6 @@ export default function NotificationsScreen() {
 
   const approveRequest = useMutation({
     mutationFn: async ({ requestId, unitId }: { requestId: string; unitId: string }) => {
-      // Update connection request
       const { error: requestError } = await supabase
         .from('connection_requests')
         .update({
@@ -148,7 +146,6 @@ export default function NotificationsScreen() {
 
       if (requestError) throw requestError;
 
-      // Get the request details
       const { data: request } = await supabase
         .from('connection_requests')
         .select('*')
@@ -157,14 +154,12 @@ export default function NotificationsScreen() {
 
       if (!request) throw new Error('Request not found');
 
-      // Get unit details
       const { data: unit } = await supabase
         .from('units')
         .select('rent_amount')
         .eq('id', unitId)
         .single();
 
-      // Create or update tenant record in tenants table (upsert handles reconnections)
       const { error: tenantError } = await supabase
         .from('tenants')
         .upsert({
@@ -181,7 +176,6 @@ export default function NotificationsScreen() {
 
       if (tenantError) throw tenantError;
 
-      // Update unit status to occupied
       const { error: unitError } = await supabase
         .from('units')
         .update({ status: 'occupied' })
@@ -194,6 +188,7 @@ export default function NotificationsScreen() {
       queryClient.invalidateQueries({ queryKey: ['properties'] });
       setShowUnitModal(false);
       setSelectedRequest(null);
+      setActiveTab('approved');
       Alert.alert(t.common.success, t.notifications.approvalSuccess);
     },
     onError: (error: any) => {
@@ -215,6 +210,7 @@ export default function NotificationsScreen() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['connection-requests'] });
+      setActiveTab('rejected');
       Alert.alert(t.common.done, t.notifications.declineSuccess);
     },
     onError: (error: any) => {
@@ -262,70 +258,83 @@ export default function NotificationsScreen() {
   };
 
   const pendingRequests = requests?.filter((r) => r.status === 'pending') || [];
-  const processedRequests = requests?.filter((r) => r.status !== 'pending') || [];
+  const approvedRequests = requests?.filter((r) => r.status === 'approved') || [];
+  const rejectedRequests = requests?.filter((r) => r.status === 'rejected') || [];
 
-  const renderRequest = ({ item }: { item: ConnectionRequestWithDetails }) => {
-    const isPending = item.status === 'pending';
+  const tabData: Record<Tab, ConnectionRequestWithDetails[]> = {
+    pending: pendingRequests,
+    approved: approvedRequests,
+    rejected: rejectedRequests,
+  };
 
-    return (
-      <Card style={styles.requestCard}>
-        <View style={styles.requestHeader}>
-          <View style={styles.requestInfo}>
-            <Text style={styles.requestName}>{item.tenant_name}</Text>
-            <Text style={styles.requestEmail}>{item.tenant_email}</Text>
-            {item.tenant_phone && (
-              <Text style={styles.requestPhone}>{item.tenant_phone}</Text>
-            )}
-          </View>
-          <Badge
-            label={item.status === 'approved' ? t.notifications.approved : item.status === 'rejected' ? t.notifications.declined : t.owners.pending}
-            variant={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'error' : 'warning'}
+  const renderRequest = ({ item }: { item: ConnectionRequestWithDetails }) => (
+    <Card style={styles.requestCard}>
+      <View style={styles.requestHeader}>
+        <View style={styles.requestInfo}>
+          <Text style={styles.requestName}>{item.tenant_name}</Text>
+          <Text style={styles.requestEmail}>{item.tenant_email}</Text>
+          {item.tenant_phone && (
+            <Text style={styles.requestPhone}>{item.tenant_phone}</Text>
+          )}
+        </View>
+        <Badge
+          label={
+            item.status === 'approved'
+              ? t.notifications.approved
+              : item.status === 'rejected'
+              ? t.notifications.declined
+              : t.owners.pending
+          }
+          variant={
+            item.status === 'approved'
+              ? 'success'
+              : item.status === 'rejected'
+              ? 'error'
+              : 'warning'
+          }
+          size="sm"
+        />
+      </View>
+
+      {item.status === 'approved' && item.assigned_unit && (
+        <View style={styles.assignedInfo}>
+          <Feather name="home" size={14} color={colors.text.secondary} />
+          <Text style={styles.assignedText}>
+            {item.assigned_unit.property.name} - {item.assigned_unit.unit_number}
+          </Text>
+        </View>
+      )}
+
+      <Text style={styles.requestDate}>
+        {new Date(item.created_at).toLocaleDateString()}
+      </Text>
+
+      {item.status === 'pending' && (
+        <View style={styles.actions}>
+          <Button
+            title={t.notifications.decline}
+            variant="outline"
             size="sm"
+            onPress={() => handleReject(item)}
+            style={styles.actionButton}
+            loading={rejectRequest.isPending}
+          />
+          <Button
+            title={t.notifications.approve}
+            size="sm"
+            onPress={() => handleApprove(item)}
+            style={styles.actionButton}
           />
         </View>
-
-        {item.status === 'approved' && item.assigned_unit && (
-          <View style={styles.assignedInfo}>
-            <Feather name="home" size={14} color={colors.text.secondary} />
-            <Text style={styles.assignedText}>
-              {item.assigned_unit.property.name} - {item.assigned_unit.unit_number}
-            </Text>
-          </View>
-        )}
-
-        <Text style={styles.requestDate}>
-          {new Date(item.created_at).toLocaleDateString()}
-        </Text>
-
-        {isPending && (
-          <View style={styles.actions}>
-            <Button
-              title={t.notifications.decline}
-              variant="outline"
-              size="sm"
-              onPress={() => handleReject(item)}
-              style={styles.actionButton}
-              loading={rejectRequest.isPending}
-            />
-            <Button
-              title={t.notifications.approve}
-              size="sm"
-              onPress={() => handleApprove(item)}
-              style={styles.actionButton}
-            />
-          </View>
-        )}
-      </Card>
-    );
-  };
+      )}
+    </Card>
+  );
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Feather name="bell-off" size={48} color={colors.gray[600]} />
       <Text style={styles.emptyTitle}>{t.notifications.noNotifications}</Text>
-      <Text style={styles.emptySubtitle}>
-        {t.notifications.noNotificationsSubtitle}
-      </Text>
+      <Text style={styles.emptySubtitle}>{t.notifications.noNotificationsSubtitle}</Text>
     </View>
   );
 
@@ -340,8 +349,42 @@ export default function NotificationsScreen() {
         )}
       </View>
 
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'pending' && styles.tabActive]}
+          onPress={() => setActiveTab('pending')}
+        >
+          <Text style={[styles.tabText, activeTab === 'pending' && styles.tabTextActive]}>
+            {t.nav.inbox}
+          </Text>
+          {pendingRequests.length > 0 && (
+            <View style={styles.tabBadge}>
+              <Text style={styles.tabBadgeText}>{pendingRequests.length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'approved' && styles.tabActive]}
+          onPress={() => setActiveTab('approved')}
+        >
+          <Text style={[styles.tabText, activeTab === 'approved' && styles.tabTextActive]}>
+            {t.notifications.approved}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'rejected' && styles.tabActive]}
+          onPress={() => setActiveTab('rejected')}
+        >
+          <Text style={[styles.tabText, activeTab === 'rejected' && styles.tabTextActive]}>
+            {t.notifications.declined}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <FlatList
-        data={[...pendingRequests, ...processedRequests]}
+        data={tabData[activeTab]}
         keyExtractor={(item) => item.id}
         renderItem={renderRequest}
         contentContainerStyle={styles.list}
@@ -350,11 +393,6 @@ export default function NotificationsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         ListEmptyComponent={!isLoading ? renderEmpty : null}
-        ListHeaderComponent={
-          pendingRequests.length > 0 ? (
-            <Text style={styles.sectionTitle}>{t.notifications.pendingRequests}</Text>
-          ) : null
-        }
       />
 
       <Modal
@@ -477,17 +515,52 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.white,
   },
-  list: {
-    padding: spacing.lg,
-    paddingTop: 0,
+  tabBar: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
   },
-  sectionTitle: {
+  tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tabActive: {
+    backgroundColor: colors.yellow,
+    borderColor: colors.yellow,
+  },
+  tabText: {
     ...typography.bodySmall,
     fontWeight: '600',
     color: colors.text.secondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: spacing.md,
+  },
+  tabTextActive: {
+    color: colors.background,
+  },
+  tabBadge: {
+    backgroundColor: colors.error.main,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  tabBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  list: {
+    padding: spacing.lg,
+    paddingTop: 0,
   },
   requestCard: {
     marginBottom: spacing.md,
