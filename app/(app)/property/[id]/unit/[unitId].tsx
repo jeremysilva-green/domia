@@ -7,6 +7,7 @@ import {
   RefreshControl,
   TouchableOpacity,
   Alert,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -17,8 +18,7 @@ import { RentIndicator } from '../../../../../src/components/shared';
 import { colors, spacing, typography } from '../../../../../src/constants/theme';
 import { RentStatus } from '../../../../../src/types';
 import { useI18n } from '../../../../../src/i18n';
-
-type Currency = 'USD' | 'PYG';
+import { CURRENCIES, Currency, getCurrencySymbol, getCurrencyLabel } from '../../../../../src/utils/currency';
 
 export default function UnitDetailScreen() {
   const { t } = useI18n();
@@ -30,6 +30,7 @@ export default function UnitDetailScreen() {
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [showCurrencyModal, setShowCurrencyModal] = useState(false);
 
   // Edit form state
   const [editUnitNumber, setEditUnitNumber] = useState('');
@@ -191,11 +192,6 @@ export default function UnitDetailScreen() {
     setRefreshing(false);
   };
 
-  // Get currency symbol for display
-  const getCurrencySymbol = (currency?: string) => {
-    return currency === 'PYG' ? '₲' : '$';
-  };
-
   if (!unit) {
     return (
       <SafeAreaView style={styles.container}>
@@ -247,45 +243,18 @@ export default function UnitDetailScreen() {
 
               <View style={styles.currencyRow}>
                 <Text style={styles.currencyLabel}>{t.tenants.currency}</Text>
-                <View style={styles.currencyToggle}>
-                  <TouchableOpacity
-                    style={[
-                      styles.currencyButton,
-                      editCurrency === 'USD' && styles.currencyButtonActive,
-                    ]}
-                    onPress={() => setEditCurrency('USD')}
-                  >
-                    <Text
-                      style={[
-                        styles.currencyButtonText,
-                        editCurrency === 'USD' && styles.currencyButtonTextActive,
-                      ]}
-                    >
-                      $ USD
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.currencyButton,
-                      editCurrency === 'PYG' && styles.currencyButtonActive,
-                    ]}
-                    onPress={() => setEditCurrency('PYG')}
-                  >
-                    <Text
-                      style={[
-                        styles.currencyButtonText,
-                        editCurrency === 'PYG' && styles.currencyButtonTextActive,
-                      ]}
-                    >
-                      ₲ PYG
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  style={styles.currencySelector}
+                  onPress={() => setShowCurrencyModal(true)}
+                >
+                  <Text style={styles.currencySelectorText}>{getCurrencyLabel(editCurrency)}</Text>
+                  <Text style={styles.currencyChevron}>▼</Text>
+                </TouchableOpacity>
               </View>
 
               <Input
-                label={editCurrency === 'USD' ? t.tenants.monthlyRentUSD : t.tenants.monthlyRentPYG}
-                placeholder={editCurrency === 'USD' ? '1500' : '5000000'}
+                label={t.units.monthlyRent}
+                placeholder="0"
                 value={editRentAmount}
                 onChangeText={setEditRentAmount}
                 keyboardType="decimal-pad"
@@ -439,6 +408,52 @@ export default function UnitDetailScreen() {
           </>
         )}
       </ScrollView>
+
+      <Modal
+        visible={showCurrencyModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCurrencyModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowCurrencyModal(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t.tenants.currency}</Text>
+              <TouchableOpacity onPress={() => setShowCurrencyModal(false)}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              {CURRENCIES.map((c) => (
+                <TouchableOpacity
+                  key={c.code}
+                  style={[
+                    styles.currencyItem,
+                    editCurrency === c.code && styles.currencyItemActive,
+                  ]}
+                  onPress={() => {
+                    setEditCurrency(c.code as Currency);
+                    setShowCurrencyModal(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.currencyItemText,
+                      editCurrency === c.code && styles.currencyItemTextActive,
+                    ]}
+                  >
+                    {c.symbol}  {c.code} — {c.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -505,27 +520,23 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
     fontWeight: '500',
   },
-  currencyToggle: {
+  currencySelector: {
     flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.gray[800],
     borderRadius: 8,
-    padding: 2,
-  },
-  currencyButton: {
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
-    borderRadius: 6,
+    gap: 8,
   },
-  currencyButtonActive: {
-    backgroundColor: '#facc15',
-  },
-  currencyButtonText: {
+  currencySelectorText: {
     ...typography.bodySmall,
-    color: colors.text.secondary,
+    color: colors.text.primary,
     fontWeight: '600',
   },
-  currencyButtonTextActive: {
-    color: colors.black,
+  currencyChevron: {
+    fontSize: 10,
+    color: colors.text.secondary,
   },
   saveButton: {
     marginTop: spacing.md,
@@ -646,5 +657,50 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.text.secondary,
     textTransform: 'capitalize',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: colors.gray[800],
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: '70%',
+    paddingBottom: spacing.xl,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  modalTitle: {
+    ...typography.h3,
+    color: colors.text.primary,
+  },
+  modalClose: {
+    ...typography.body,
+    color: colors.text.secondary,
+  },
+  currencyItem: {
+    padding: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  currencyItemActive: {
+    backgroundColor: 'rgba(250, 204, 21, 0.1)',
+  },
+  currencyItemText: {
+    ...typography.body,
+    color: colors.text.primary,
+  },
+  currencyItemTextActive: {
+    color: '#facc15',
+    fontWeight: '600',
   },
 });

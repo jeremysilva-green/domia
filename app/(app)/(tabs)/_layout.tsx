@@ -1,5 +1,5 @@
 // Force rebundle: 2026-02-04T21:30:00 - All yellow colors are now #facc15
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList, RefreshControl, Image, Modal, Alert } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -7,13 +7,12 @@ import PagerView from 'react-native-pager-view';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import * as Clipboard from 'expo-clipboard';
 import { useI18n, Language } from '../../../src/i18n';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { supabase } from '../../../src/services/supabase';
 import { colors, spacing, typography, borderRadius } from '../../../src/constants/theme';
 import { StatCard } from '../../../src/components/dashboard';
-import { Card, Button, Badge } from '../../../src/components/ui';
+import { Card, Button, Badge, Input } from '../../../src/components/ui';
 import { StatusBadge } from '../../../src/components/shared';
 import {
   DashboardStats,
@@ -25,7 +24,9 @@ import {
   Property,
   Unit
 } from '../../../src/types';
-import { formatMonthlyRent } from '../../../src/utils/currency';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CURRENCIES, Currency, getCurrencySymbol, getCurrencyLabel, formatMonthlyRent } from '../../../src/utils/currency';
+import { prefillPhone } from '../../../src/utils/phoneCountryCode';
 
 // ============================================
 // TAB CONFIGURATION
@@ -49,35 +50,102 @@ const TABS: TabConfig[] = [
 // DASHBOARD CONTENT
 // ============================================
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
+const DISPLAY_CURRENCY_KEY = '@domia_display_currency';
+const EXCHANGE_RATE_CACHE_KEY = '@domia_exchange_rates';
+const EXCHANGE_RATE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+/**
+ * Fetches USD-based exchange rates from the free @fawazahmed0/currency-api (jsDelivr CDN).
+ * Results are cached in AsyncStorage for 4 hours. Falls back to a mirror URL if the
+ * primary CDN is unavailable. Returns an empty object on total failure (caller must handle).
+ */
+async function fetchExchangeRates(): Promise<Record<string, number>> {
+  try {
+    const cached = await AsyncStorage.getItem(EXCHANGE_RATE_CACHE_KEY);
+    if (cached) {
+      const { timestamp, rates } = JSON.parse(cached);
+      if (Date.now() - timestamp < EXCHANGE_RATE_TTL_MS) return rates;
+    }
+  } catch {}
+
+  const urls = [
+    'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json',
+    'https://latest.currency-api.pages.dev/v1/currencies/usd.json',
+  ];
+
+  for (const url of urls) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      const data = await res.json();
+      const rates: Record<string, number> = data.usd; // { "pyg": 7521.3, "eur": 0.92, ... }
+      await AsyncStorage.setItem(EXCHANGE_RATE_CACHE_KEY, JSON.stringify({ timestamp: Date.now(), rates }));
+      return rates;
+    } catch {} finally {
+      clearTimeout(timeout);
+    }
+  }
+  return {};
+}
+
+/**
+ * Converts an amount from one currency to another using USD-based rates.
+ * Falls back to a hardcoded USD↔PYG rate if live rates are unavailable.
+ */
+function convertToDisplayCurrency(
+  amount: number,
+  fromCurrency: string,
+  toCurrency: string,
+  rates: Record<string, number>
+): number {
+  const from = fromCurrency.toLowerCase();
+  const to = toCurrency.toLowerCase();
+  if (from === to) return amount;
+
+  const fromRate = from === 'usd' ? 1 : rates[from];
+  const toRate = to === 'usd' ? 1 : rates[to];
+
+  if (!fromRate || !toRate) {
+    // Hardcoded fallback for USD↔PYG only
+    if (from === 'usd' && to === 'pyg') return amount * 7500;
+    if (from === 'pyg' && to === 'usd') return amount / 7500;
+    return amount;
+  }
+
+  // amount → USD → toCurrency
+  const inUSD = from === 'usd' ? amount : amount / fromRate;
+  return to === 'usd' ? inUSD : inUSD * toRate;
+}
+
+function formatDisplayCurrency(amount: number, displayCurrency: Currency): string {
+  return getCurrencySymbol(displayCurrency) + new Intl.NumberFormat('es-PY', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
 }
 
-function DashboardContent() {
+function DashboardContent({ displayCurrency }: { displayCurrency: Currency }) {
   const router = useRouter();
   const { owner } = useAuthStore();
   const { t, language } = useI18n();
   const [refreshing, setRefreshing] = useState(false);
 
   const { data: stats, refetch: refetchStats } = useQuery<DashboardStats>({
-    queryKey: ['dashboard-stats', owner?.id],
+    queryKey: ['dashboard-stats', owner?.id, displayCurrency],
     queryFn: async () => {
       if (!owner?.id) throw new Error('No owner');
       const now = new Date();
       const currentMonth = now.getMonth() + 1;
       const currentYear = now.getFullYear();
+      const exchangeRates = await fetchExchangeRates();
 
       const [propertiesRes, unitsRes, tenantsRes, paymentsRes, maintenanceRes] =
         await Promise.all([
           supabase.from('properties').select('id').eq('owner_id', owner.id),
           supabase
             .from('units')
-            .select('id, status, property_id')
+            .select('id, status, property_id, rent_amount, currency')
             .in(
               'property_id',
               (await supabase.from('properties').select('id').eq('owner_id', owner.id)).data?.map((p) => p.id) || []
@@ -109,7 +177,13 @@ function DashboardContent() {
       const maintenance = maintenanceRes.data || [];
 
       return {
-        totalRentExpected: tenants.reduce((sum, t) => sum + (t.rent_amount || 0), 0),
+        totalRentExpected: units
+          .filter((u) => u.status === 'occupied')
+          .reduce((sum, u) => {
+            const unitCurrency = (u as any).currency || 'USD';
+            const rentAmount = u.rent_amount || 0;
+            return sum + convertToDisplayCurrency(rentAmount, unitCurrency, displayCurrency, exchangeRates);
+          }, 0),
         totalRentCollected: payments.reduce((sum, p) => sum + (p.amount_paid || 0), 0),
         latePaymentsCount: payments.filter((p) => p.status === 'late').length,
         activeMaintenanceCount: maintenance.length,
@@ -160,8 +234,11 @@ function DashboardContent() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refetchStats(), refetchLeases()]);
-    setRefreshing(false);
+    try {
+      await Promise.all([refetchStats(), refetchLeases()]);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   return (
@@ -184,13 +261,13 @@ function DashboardContent() {
         <View style={contentStyles.statsRow}>
           <StatCard
             title={language === 'es' ? 'Esperado' : 'Expected'}
-            value={formatCurrency(stats?.totalRentExpected || 0)}
+            value={formatDisplayCurrency(stats?.totalRentExpected || 0, displayCurrency)}
             subtitle={language === 'es' ? 'Este mes' : 'This month'}
             style={contentStyles.statCard}
           />
           <StatCard
             title={t.home.collected}
-            value={formatCurrency(stats?.totalRentCollected || 0)}
+            value={formatDisplayCurrency(stats?.totalRentCollected || 0, displayCurrency)}
             subtitle={language === 'es' ? 'Este mes' : 'This month'}
             variant="success"
             style={contentStyles.statCard}
@@ -326,8 +403,11 @@ function PropertiesContent() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const renderEmpty = () => (
@@ -440,8 +520,11 @@ function MaintenanceContent() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const renderEmpty = () => (
@@ -617,8 +700,11 @@ function NotificationsContent() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const pendingRequests = requests?.filter((r) => r.status === 'pending') || [];
@@ -741,19 +827,50 @@ function SettingsRow({ label, value }: { label: string; value: string | undefine
   );
 }
 
-function SettingsContent() {
-  const { owner, signOut, isLoading } = useAuthStore();
+function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrency: Currency; onChangeCurrency: (c: Currency) => void }) {
+  const { owner, signOut, isLoading, fetchOwnerProfile } = useAuthStore();
   const { t, language, setLanguage } = useI18n();
-  const [copied, setCopied] = useState(false);
 
-  const maintenanceLink = owner?.id ? `https://domus.app/maintenance/${owner.id}` : '';
+  const [showCurrencyModal, setShowCurrencyModal] = useState(false);
+  const [isBankEditing, setIsBankEditing] = useState(false);
+  const [bankAlias, setBankAlias] = useState(owner?.bank_alias || '');
+  const [savingBank, setSavingBank] = useState(false);
+  const [isPhoneEditing, setIsPhoneEditing] = useState(false);
+  const [phoneValue, setPhoneValue] = useState(prefillPhone(owner?.phone));
+  const [savingPhone, setSavingPhone] = useState(false);
 
-  const handleCopyMaintenanceLink = async () => {
-    if (!maintenanceLink) return;
-    await Clipboard.setStringAsync(maintenanceLink);
-    setCopied(true);
-    Alert.alert(t.settings.linkCopied, t.settings.linkCopiedDesc);
-    setTimeout(() => setCopied(false), 3000);
+  const handleSaveBankInfo = async () => {
+    setSavingBank(true);
+    try {
+      const { error } = await supabase
+        .from('owners')
+        .update({ bank_alias: bankAlias })
+        .eq('id', owner!.id);
+      if (error) throw error;
+      await fetchOwnerProfile();
+      setIsBankEditing(false);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSavingBank(false);
+    }
+  };
+
+  const handleSavePhone = async () => {
+    setSavingPhone(true);
+    try {
+      const { error } = await supabase
+        .from('owners')
+        .update({ phone: phoneValue.trim() })
+        .eq('id', owner!.id);
+      if (error) throw error;
+      await fetchOwnerProfile();
+      setIsPhoneEditing(false);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSavingPhone(false);
+    }
   };
 
   const handleSignOut = () => {
@@ -771,13 +888,53 @@ function SettingsContent() {
         <Text style={contentStyles.screenTitle}>{t.settings.title}</Text>
 
         <View style={contentStyles.settingsSection}>
-          <Text style={contentStyles.settingsSectionTitle}>{t.settings.account}</Text>
+          <Text style={contentStyles.settingsSectionTitle}>{language === 'es' ? 'Moneda de visualización' : 'Display Currency'}</Text>
+          <Card>
+            <TouchableOpacity
+              style={contentStyles.displayCurrencyRow}
+              onPress={() => setShowCurrencyModal(true)}
+            >
+              <Text style={contentStyles.settingsLabel}>
+                {language === 'es' ? 'Moneda de visualización' : 'Display Currency'}
+              </Text>
+              <View style={contentStyles.displayCurrencySelector}>
+                <Text style={contentStyles.displayCurrencySelectorText}>{getCurrencyLabel(displayCurrency)}</Text>
+                <Text style={contentStyles.displayCurrencyChevron}>▼</Text>
+              </View>
+            </TouchableOpacity>
+          </Card>
+        </View>
+
+        <View style={contentStyles.settingsSection}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
+            <Text style={contentStyles.settingsSectionTitle}>{t.settings.account}</Text>
+            {!isPhoneEditing && (
+              <TouchableOpacity onPress={() => { setPhoneValue(prefillPhone(owner?.phone)); setIsPhoneEditing(true); }}>
+                <Feather name="edit-2" size={16} color={colors.yellow} />
+              </TouchableOpacity>
+            )}
+          </View>
           <Card>
             <SettingsRow label={t.settings.name} value={owner?.full_name} />
             <View style={contentStyles.divider} />
             <SettingsRow label={t.settings.email} value={owner?.email} />
             <View style={contentStyles.divider} />
-            <SettingsRow label={t.settings.phone} value={owner?.phone || t.common.notSet} />
+            {isPhoneEditing ? (
+              <>
+                <Input
+                  label={t.settings.phone}
+                  value={phoneValue}
+                  onChangeText={setPhoneValue}
+                  keyboardType="phone-pad"
+                />
+                <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+                  <Button title={t.common.cancel} variant="outline" onPress={() => setIsPhoneEditing(false)} style={{ flex: 1 }} />
+                  <Button title={t.common.save} onPress={handleSavePhone} loading={savingPhone} style={{ flex: 1 }} />
+                </View>
+              </>
+            ) : (
+              <SettingsRow label={t.settings.phone} value={owner?.phone || t.common.notSet} />
+            )}
           </Card>
         </View>
 
@@ -798,21 +955,26 @@ function SettingsContent() {
         </View>
 
         <View style={contentStyles.settingsSection}>
-          <Text style={contentStyles.settingsSectionTitle}>{t.settings.tenantTools}</Text>
-          <Card>
-            <View style={contentStyles.linkSection}>
-              <View style={contentStyles.linkInfo}>
-                <Feather name="link" size={20} color={colors.yellow} />
-                <View style={contentStyles.linkTextContainer}>
-                  <Text style={contentStyles.linkTitle}>{t.settings.maintenanceLink}</Text>
-                  <Text style={contentStyles.linkDescription}>{t.settings.maintenanceLinkDesc}</Text>
-                </View>
-              </View>
-              <TouchableOpacity style={contentStyles.copyButton} onPress={handleCopyMaintenanceLink}>
-                <Feather name={copied ? 'check' : 'copy'} size={18} color={copied ? colors.success.main : colors.yellow} />
-                <Text style={[contentStyles.copyText, copied && contentStyles.copyTextSuccess]}>{copied ? t.settings.copied : t.settings.copyLink}</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
+            <Text style={contentStyles.settingsSectionTitle}>{t.bankInfo.title}</Text>
+            {!isBankEditing && (
+              <TouchableOpacity onPress={() => setIsBankEditing(true)}>
+                <Feather name="edit-2" size={16} color={colors.yellow} />
               </TouchableOpacity>
-            </View>
+            )}
+          </View>
+          <Card>
+            {isBankEditing ? (
+              <>
+                <Input label={t.bankInfo.alias} value={bankAlias} onChangeText={setBankAlias} />
+                <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+                  <Button title={t.common.cancel} variant="outline" onPress={() => setIsBankEditing(false)} style={{ flex: 1 }} />
+                  <Button title={t.common.save} onPress={handleSaveBankInfo} loading={savingBank} style={{ flex: 1 }} />
+                </View>
+              </>
+            ) : (
+              <SettingsRow label={t.bankInfo.alias} value={owner?.bank_alias || '-'} />
+            )}
           </Card>
         </View>
 
@@ -829,6 +991,54 @@ function SettingsContent() {
 
         <Text style={contentStyles.footer}>{t.settings.footer}</Text>
       </ScrollView>
+
+      <Modal
+        visible={showCurrencyModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCurrencyModal(false)}
+      >
+        <TouchableOpacity
+          style={contentStyles.currencyPickerOverlay}
+          activeOpacity={1}
+          onPress={() => setShowCurrencyModal(false)}
+        >
+          <View style={contentStyles.currencyPickerContainer}>
+            <View style={contentStyles.currencyPickerHeader}>
+              <Text style={contentStyles.currencyPickerTitle}>
+                {language === 'es' ? 'Moneda de visualización' : 'Display Currency'}
+              </Text>
+              <TouchableOpacity onPress={() => setShowCurrencyModal(false)}>
+                <Text style={contentStyles.currencyPickerClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              {CURRENCIES.map((c) => (
+                <TouchableOpacity
+                  key={c.code}
+                  style={[
+                    contentStyles.currencyPickerItem,
+                    displayCurrency === c.code && contentStyles.currencyPickerItemActive,
+                  ]}
+                  onPress={() => {
+                    onChangeCurrency(c.code as Currency);
+                    setShowCurrencyModal(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      contentStyles.currencyPickerItemText,
+                      displayCurrency === c.code && contentStyles.currencyPickerItemTextActive,
+                    ]}
+                  >
+                    {c.symbol}  {c.code} — {c.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -843,6 +1053,18 @@ export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const pagerRef = useRef<PagerView>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [displayCurrency, setDisplayCurrency] = useState<Currency>('PYG');
+
+  useEffect(() => {
+    AsyncStorage.getItem(DISPLAY_CURRENCY_KEY).then((val) => {
+      if (val) setDisplayCurrency(val as Currency);
+    });
+  }, []);
+
+  const handleChangeCurrency = useCallback(async (currency: Currency) => {
+    setDisplayCurrency(currency);
+    await AsyncStorage.setItem(DISPLAY_CURRENCY_KEY, currency);
+  }, []);
 
   const { data: pendingInboxCount } = useQuery({
     queryKey: ['pending-connections-count', owner?.id],
@@ -881,7 +1103,7 @@ export default function TabsLayout() {
         overdrag={true}
       >
         <View key="home" style={styles.page}>
-          <DashboardContent />
+          <DashboardContent displayCurrency={displayCurrency} />
         </View>
         <View key="properties" style={styles.page}>
           <PropertiesContent />
@@ -893,7 +1115,7 @@ export default function TabsLayout() {
           <NotificationsContent />
         </View>
         <View key="settings" style={styles.page}>
-          <SettingsContent />
+          <SettingsContent displayCurrency={displayCurrency} onChangeCurrency={handleChangeCurrency} />
         </View>
       </PagerView>
 
@@ -1085,4 +1307,17 @@ const contentStyles = StyleSheet.create({
   copyTextSuccess: { color: colors.success.main },
   signOutSection: { marginTop: spacing.xl },
   footer: { ...typography.caption, color: colors.text.secondary, textAlign: 'center', marginTop: spacing.xxl },
+  displayCurrencyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.sm },
+  displayCurrencySelector: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceLight, borderRadius: 8, paddingVertical: 6, paddingHorizontal: spacing.md, gap: 6 },
+  displayCurrencySelectorText: { ...typography.bodySmall, color: colors.text.primary, fontWeight: '600' },
+  displayCurrencyChevron: { fontSize: 10, color: colors.text.secondary },
+  currencyPickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  currencyPickerContainer: { backgroundColor: colors.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '70%', paddingBottom: spacing.xl },
+  currencyPickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
+  currencyPickerTitle: { ...typography.h3, color: colors.text.primary },
+  currencyPickerClose: { ...typography.body, color: colors.text.secondary },
+  currencyPickerItem: { padding: spacing.md, paddingHorizontal: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
+  currencyPickerItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)' },
+  currencyPickerItemText: { ...typography.body, color: colors.text.primary },
+  currencyPickerItemTextActive: { color: '#facc15', fontWeight: '600' },
 });

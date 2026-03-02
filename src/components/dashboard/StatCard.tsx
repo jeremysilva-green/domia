@@ -29,7 +29,12 @@ export function StatCard({
   return (
     <Card style={[styles.card, style]}>
       <Text style={styles.title}>{title}</Text>
-      <Text style={[styles.value, { color: variantColors[variant] }]}>
+      <Text
+        style={[styles.value, { color: variantColors[variant] }]}
+        adjustsFontSizeToFit={true}
+        numberOfLines={1}
+        minimumFontScale={0.4}
+      >
         {value}
       </Text>
       {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}

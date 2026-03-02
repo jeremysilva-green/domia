@@ -16,6 +16,7 @@ import { supabase } from '../../../../src/services/supabase';
 import { Button, Input, Card } from '../../../../src/components/ui';
 import { colors, spacing, typography } from '../../../../src/constants/theme';
 import { useI18n } from '../../../../src/i18n';
+import { prefillPhone } from '../../../../src/utils/phoneCountryCode';
 
 // Convert YYYY-MM-DD to display format based on language
 // English: MM/DD/YYYY, Spanish: DD/MM/YYYY
@@ -68,7 +69,7 @@ export default function EditTenantScreen() {
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(prefillPhone());
   const [rentAmount, setRentAmount] = useState('');
   const [leaseStart, setLeaseStart] = useState('');
   const [leaseEnd, setLeaseEnd] = useState('');
@@ -100,7 +101,7 @@ export default function EditTenantScreen() {
     if (tenant) {
       setFullName(tenant.full_name || '');
       setEmail(tenant.email || '');
-      setPhone(tenant.phone || '');
+      setPhone(prefillPhone(tenant.phone));
       setRentAmount(tenant.rent_amount?.toString() || '');
       setLeaseStart(formatDateForDisplay(tenant.lease_start || '', isSpanish));
       setLeaseEnd(formatDateForDisplay(tenant.lease_end || '', isSpanish));

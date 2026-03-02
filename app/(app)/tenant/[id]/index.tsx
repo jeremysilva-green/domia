@@ -8,10 +8,16 @@ import {
   TouchableOpacity,
   Linking,
   Alert,
+  Image,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { supabase } from '../../../../src/services/supabase';
@@ -33,6 +39,8 @@ export default function TenantDetailScreen() {
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
   const currentYear = now.getFullYear();
+
+  const [leaseModalVisible, setLeaseModalVisible] = useState(false);
 
   const { data: tenant, refetch } = useQuery<TenantWithDetails>({
     queryKey: ['tenant', id],
@@ -237,6 +245,61 @@ export default function TenantDetailScreen() {
     );
   };
 
+  const uploadLease = useMutation({
+    mutationFn: async (imageUri: string) => {
+      const fileName = `lease-${id}-${Date.now()}.jpg`;
+
+      const base64 = await FileSystem.readAsStringAsync(imageUri, {
+        encoding: 'base64',
+      });
+
+      const { error: uploadError } = await supabase.storage
+        .from('property-images')
+        .upload(fileName, decode(base64), {
+          contentType: 'image/jpeg',
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from('property-images')
+        .getPublicUrl(fileName);
+
+      const { error: updateError } = await supabase
+        .from('tenants')
+        .update({ lease_image_url: urlData.publicUrl } as any)
+        .eq('id', id as string);
+
+      if (updateError) throw updateError;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tenant', id] });
+    },
+    onError: (error: any) => {
+      Alert.alert(t.common.error, error.message);
+    },
+  });
+
+  const handlePickLeaseImage = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permissionResult.granted) {
+      Alert.alert(t.properties.permissionRequired, t.properties.permissionMessage);
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.85,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      uploadLease.mutate(result.assets[0].uri);
+    }
+  };
+
   const handleCall = () => {
     if (tenant?.phone) {
       Linking.openURL(`tel:${tenant.phone}`);
@@ -411,6 +474,78 @@ export default function TenantDetailScreen() {
             style={styles.actionButton}
           />
         </View>
+
+        {/* Lease Document Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t.tenantDetail.leaseDocument}</Text>
+          <Card padding="none" style={styles.leaseCard}>
+            {(tenant as any).lease_image_url ? (
+              <>
+                <TouchableOpacity onPress={() => setLeaseModalVisible(true)}>
+                  <Image
+                    source={{ uri: (tenant as any).lease_image_url }}
+                    style={styles.leaseThumbnail}
+                    resizeMode="cover"
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.leaseUploadButton}
+                  onPress={handlePickLeaseImage}
+                  disabled={uploadLease.isPending}
+                >
+                  {uploadLease.isPending ? (
+                    <ActivityIndicator size="small" color={colors.yellow} />
+                  ) : (
+                    <>
+                      <Feather name="upload" size={14} color={colors.yellow} />
+                      <Text style={styles.leaseUploadText}>{t.tenantDetail.changeLeaseImage}</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={styles.leaseEmptyState}
+                onPress={handlePickLeaseImage}
+                disabled={uploadLease.isPending}
+              >
+                {uploadLease.isPending ? (
+                  <ActivityIndicator size="small" color={colors.yellow} />
+                ) : (
+                  <>
+                    <Feather name="upload" size={32} color={colors.text.secondary} />
+                    <Text style={styles.leaseEmptyText}>{t.tenantDetail.noLeaseUploaded}</Text>
+                    <Text style={styles.leaseUploadText}>{t.tenantDetail.uploadLease}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </Card>
+        </View>
+
+        {/* Lease Image Modal */}
+        <Modal
+          visible={leaseModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setLeaseModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <TouchableOpacity
+              style={styles.modalClose}
+              onPress={() => setLeaseModalVisible(false)}
+            >
+              <Feather name="x" size={24} color={colors.white} />
+            </TouchableOpacity>
+            {(tenant as any).lease_image_url && (
+              <Image
+                source={{ uri: (tenant as any).lease_image_url }}
+                style={styles.modalImage}
+                resizeMode="contain"
+              />
+            )}
+          </View>
+        </Modal>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t.tenantDetail.rentHistory}</Text>
@@ -780,5 +915,52 @@ const styles = StyleSheet.create({
   emptyText: {
     ...typography.body,
     color: colors.text.secondary,
+  },
+  leaseCard: {
+    overflow: 'hidden',
+  },
+  leaseThumbnail: {
+    width: '100%',
+    height: 200,
+  },
+  leaseUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  leaseUploadText: {
+    ...typography.bodySmall,
+    color: colors.yellow,
+    fontWeight: '600',
+  },
+  leaseEmptyState: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+    gap: spacing.sm,
+  },
+  leaseEmptyText: {
+    ...typography.body,
+    color: colors.text.secondary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalClose: {
+    position: 'absolute',
+    top: 56,
+    right: 20,
+    zIndex: 10,
+    padding: spacing.sm,
+  },
+  modalImage: {
+    width: '100%',
+    height: '80%',
   },
 });

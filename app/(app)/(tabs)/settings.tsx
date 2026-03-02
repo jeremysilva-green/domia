@@ -159,12 +159,7 @@ export default function SettingsScreen() {
       >
         <Text style={styles.title}>{t.settings.title}</Text>
 
-        <View style={{ backgroundColor: '#ff0000', padding: 16, borderRadius: 8, marginBottom: 12, alignItems: 'center' }}>
-          <Text style={{ color: '#ffffff', fontWeight: '900', fontSize: 18 }}>⚡ TEST BANNER - NEW VERSION ⚡</Text>
-          <Text style={{ color: '#ffffff', fontSize: 12 }}>If you see this, Expo Go is working!</Text>
-        </View>
-
-        <View style={styles.section}>
+<View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>{t.settings.account}</Text>
             {!isEditing && (

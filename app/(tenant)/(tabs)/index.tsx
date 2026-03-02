@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Alert, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Alert, Image, TouchableOpacity, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState, useMemo, useEffect } from 'react';
@@ -16,6 +16,7 @@ export default function TenantHomeScreen() {
   const queryClient = useQueryClient();
   const { tenantProfile, user } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
+  const [leaseModalVisible, setLeaseModalVisible] = useState(false);
 
   // Get connection request status
   const { data: connectionRequest, refetch } = useQuery({
@@ -40,6 +41,21 @@ export default function TenantHomeScreen() {
     },
     enabled: !!user?.id,
     refetchInterval: 5000,
+  });
+
+  // Get lease image URL from tenant record
+  const { data: leaseImageUrl, refetch: refetchLease } = useQuery<string | null>({
+    queryKey: ['tenant-lease', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from('tenants')
+        .select('lease_image_url')
+        .eq('id', user.id)
+        .single();
+      return (data as any)?.lease_image_url ?? null;
+    },
+    enabled: !!user?.id && connectionRequest?.status === 'approved',
   });
 
   // Get rent payments for rating calculation
@@ -95,8 +111,11 @@ export default function TenantHomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refetch(), refetchPayments()]);
-    setRefreshing(false);
+    try {
+      await Promise.all([refetch(), refetchPayments(), refetchLease()]);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   // Subscribe to real-time connection_requests changes
@@ -128,6 +147,7 @@ export default function TenantHomeScreen() {
         },
         () => {
           queryClient.invalidateQueries({ queryKey: ['tenant-connection', user.id] });
+          queryClient.invalidateQueries({ queryKey: ['tenant-lease', user.id] });
         }
       )
       .subscribe();
@@ -361,7 +381,16 @@ export default function TenantHomeScreen() {
                   <Feather name="tool" size={24} color={colors.yellow} />
                   <Text style={styles.actionTitle}>{t.tenantHome.reportIssue}</Text>
                 </Card>
-                <Card style={styles.actionCard}>
+                <Card
+                  style={styles.actionCard}
+                  onPress={() => {
+                    if (leaseImageUrl) {
+                      setLeaseModalVisible(true);
+                    } else {
+                      Alert.alert(t.tenantHome.viewLease, t.tenantHome.noLeaseAvailable);
+                    }
+                  }}
+                >
                   <Feather name="file-text" size={24} color={colors.yellow} />
                   <Text style={styles.actionTitle}>{t.tenantHome.viewLease}</Text>
                 </Card>
@@ -406,6 +435,30 @@ export default function TenantHomeScreen() {
           </Card>
         )}
       </ScrollView>
+
+      {/* Lease Image Modal */}
+      <Modal
+        visible={leaseModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLeaseModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalClose}
+            onPress={() => setLeaseModalVisible(false)}
+          >
+            <Feather name="x" size={24} color={colors.white} />
+          </TouchableOpacity>
+          {leaseImageUrl && (
+            <Image
+              source={{ uri: leaseImageUrl }}
+              style={styles.modalImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -707,5 +760,22 @@ const styles = StyleSheet.create({
   },
   disconnectText: {
     color: colors.error.main,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalClose: {
+    position: 'absolute',
+    top: 56,
+    right: 20,
+    zIndex: 10,
+    padding: spacing.sm,
+  },
+  modalImage: {
+    width: '100%',
+    height: '80%',
   },
 });

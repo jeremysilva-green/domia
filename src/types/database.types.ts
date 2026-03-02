@@ -160,6 +160,7 @@ export interface Database {
           rent_amount: number | null;
           lease_start: string | null;
           lease_end: string | null;
+          lease_image_url: string | null;
           status: 'pending' | 'active' | 'inactive';
           created_at: string;
           updated_at: string;
@@ -178,6 +179,7 @@ export interface Database {
           rent_amount?: number | null;
           lease_start?: string | null;
           lease_end?: string | null;
+          lease_image_url?: string | null;
           status?: 'pending' | 'active' | 'inactive';
           created_at?: string;
           updated_at?: string;
@@ -196,6 +198,7 @@ export interface Database {
           rent_amount?: number | null;
           lease_start?: string | null;
           lease_end?: string | null;
+          lease_image_url?: string | null;
           status?: 'pending' | 'active' | 'inactive';
           created_at?: string;
           updated_at?: string;

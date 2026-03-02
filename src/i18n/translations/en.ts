@@ -317,6 +317,7 @@ export const en = {
     quickActions: 'Quick Actions',
     reportIssue: 'Report Issue',
     viewLease: 'View Lease',
+    noLeaseAvailable: 'No lease document available yet. Contact your landlord.',
     getStarted: 'Get Started',
     connectFeatures: 'Connect with your property owner to access all features including maintenance requests, rent tracking, and more.',
     submitRequest: 'Submit Maintenance Request',
@@ -378,6 +379,10 @@ export const en = {
     onTime: 'on time',
     deleteTenant: 'Delete Tenant',
     deleteTenantConfirm: 'Are you sure you want to delete',
+    leaseDocument: 'Lease Document',
+    uploadLease: 'Upload Lease',
+    changeLeaseImage: 'Change Image',
+    noLeaseUploaded: 'No lease uploaded',
   },
 };
 

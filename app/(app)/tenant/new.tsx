@@ -17,6 +17,7 @@ import { useAuthStore } from '../../../src/stores/authStore';
 import { Button, Input, Card } from '../../../src/components/ui';
 import { colors, spacing, typography } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
+import { prefillPhone } from '../../../src/utils/phoneCountryCode';
 
 type Currency = 'USD' | 'PYG';
 
@@ -42,7 +43,7 @@ export default function NewTenantScreen() {
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(prefillPhone());
   const [rentAmount, setRentAmount] = useState('');
   const [currency, setCurrency] = useState<Currency>('USD');
   const [leaseStart, setLeaseStart] = useState('');

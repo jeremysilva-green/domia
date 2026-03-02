@@ -319,6 +319,7 @@ export const es: Translations = {
     quickActions: 'Acciones Rápidas',
     reportIssue: 'Reportar Problema',
     viewLease: 'Ver Contrato',
+    noLeaseAvailable: 'No hay contrato disponible aún. Contacta a tu propietario.',
     getStarted: 'Comenzar',
     connectFeatures: 'Conéctate con tu propietario para acceder a todas las funciones, incluyendo solicitudes de mantenimiento, seguimiento de renta y más.',
     submitRequest: 'Enviar Solicitud de Mantenimiento',
@@ -380,5 +381,9 @@ export const es: Translations = {
     onTime: 'a tiempo',
     deleteTenant: 'Eliminar Inquilino',
     deleteTenantConfirm: '¿Estás seguro de que quieres eliminar a',
+    leaseDocument: 'Contrato de Arrendamiento',
+    uploadLease: 'Subir Contrato',
+    changeLeaseImage: 'Cambiar Imagen',
+    noLeaseUploaded: 'Sin contrato subido',
   },
 };
