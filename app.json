@@ -24,7 +24,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.domus.app",
-      "versionCode": 5,
+      "versionCode": 7,
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
@@ -48,7 +48,8 @@
           "photosPermission": "Allow Domus to access your photos for maintenance requests."
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      "react-native-iap"
     ],
     "experiments": {
       "typedRoutes": true
