@@ -207,6 +207,8 @@ export const es: Translations = {
     dateFormatErrorUS: 'Usa el formato MM/DD/AAAA',
     leaseStartHintUS: 'Opcional - Ejemplo: 02/01/2026',
     leaseEndHintUS: 'Opcional - Ejemplo: 31/01/2027',
+    ruc: 'RUC',
+    razonSocial: 'Razón Social',
   },
 
   // Maintenance
@@ -221,7 +223,7 @@ export const es: Translations = {
     urgency: 'Urgencia',
     status: 'Estado',
     submitted: 'Enviada',
-    inProgress: 'En Progreso',
+    inProgress: 'En Proceso',
     completed: 'Completada',
     cancelled: 'Cancelada',
     low: 'Baja',
@@ -381,9 +383,82 @@ export const es: Translations = {
     onTime: 'a tiempo',
     deleteTenant: 'Eliminar Inquilino',
     deleteTenantConfirm: '¿Estás seguro de que quieres eliminar a',
-    leaseDocument: 'Contrato de Arrendamiento',
+    leaseDocument: 'Contrato de Alquiler',
     uploadLease: 'Subir Contrato',
     changeLeaseImage: 'Cambiar Imagen',
     noLeaseUploaded: 'Sin contrato subido',
+  },
+
+  // Configuración de Perfil de Inquilino
+  profileSetup: {
+    title: 'Completa tu Perfil',
+    subtitle: 'Esta información ayuda a tu administrador a identificarte y contactarte.',
+    continue: 'Continuar',
+    fullNamePlaceholder: 'Juan Pérez',
+    emailPlaceholder: 'inquilino@ejemplo.com',
+    phonePlaceholder: '+595 981 123 456',
+    rucPlaceholder: '0123456789',
+    razonSocialPlaceholder: 'Empresa S.A.',
+    fullNameRequired: 'El nombre completo es requerido',
+    phoneRequired: 'El número de teléfono es requerido',
+  },
+
+  // Incorporación
+  onboarding: {
+    step: 'Paso',
+    of: 'de',
+    skip: 'Omitir',
+    // Paso 1
+    welcomeTitle: '¡Bienvenido a Domia!',
+    welcomeSubtitle: 'Preparemos tu perfil.',
+    getStarted: 'Comenzar',
+    // Paso 2
+    whatIsYourName: '¿Cuál es tu nombre?',
+    namePlaceholder: 'Tu nombre',
+    // Paso 3
+    howManyUnits: '¿Cuántas unidades tienes?',
+    units1to10: '1–10 unidades',
+    units10to30: '10–30 unidades',
+    units30to50: '30–50 unidades',
+    perMonth: '/mes',
+    selectPlan: 'Selecciona un plan para continuar',
+    // Paso 4
+    whatToAchieve: '¿Qué quieres lograr con Domia?',
+    moreTime: 'Más tiempo para otras cosas importantes',
+    moreVisibility: 'Más visibilidad sobre mis propiedades',
+    whoIsPaying: 'Saber quién está pagando y quién no',
+    moreOrganized: 'Estar más organizado con archivos y documentos',
+    financialClarity: 'Claridad Financiera',
+    lessStress: 'Menos estrés, vivir más',
+    selectGoal: 'Selecciona al menos un objetivo',
+    // Paso 5
+    commitmentText: 'Yo, {name}, usaré Domia para {goal}.',
+    tapAndHold: 'Mantén presionado el logo para comprometerte',
+    holdToCommit: 'Sigue presionando...',
+    committed: '¡Comprometido! ✓',
+    // Paso 6
+    trialTitle: 'Te ofrecemos 7 días de acceso premium, solo para ti',
+    trialSubtitle: 'para ayudarte a {goal}.',
+    trialFeature1: 'Gestión ilimitada de inquilinos',
+    trialFeature2: 'Seguimiento de pagos en tiempo real',
+    trialFeature3: 'Sistema de solicitudes de mantenimiento',
+    startTrial: 'Iniciar Mi Prueba Gratuita',
+    // Paso 7
+    reminderTitle: 'Te enviaremos un recordatorio 1 día antes de que termine tu prueba',
+    reminderSubtitle: 'Sin sorpresas, sin presión.',
+    gotIt: 'Entendido',
+    // Paso 8
+    yourPlan: 'Tu Plan',
+    startFreeTrialCta: 'Iniciar Prueba de 7 Días',
+    trialDisclaimer: 'Una vez que termine tu prueba, se te cobrará. Cancela fácilmente en la app.',
+    processingPurchase: 'Procesando...',
+    purchaseError: 'Pago fallido. Por favor, intenta de nuevo.',
+    // Etiquetas cortas de objetivos (para pantalla de compromiso)
+    goalMoreTime: 'tener más tiempo para lo que importa',
+    goalVisibility: 'tener más visibilidad de tus propiedades',
+    goalPayments: 'saber siempre quién está pagando',
+    goalOrganized: 'estar organizado con tus archivos',
+    goalClarity: 'tener más claridad financiera',
+    goalLessStress: 'vivir con menos estrés',
   },
 };

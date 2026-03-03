@@ -205,6 +205,8 @@ export const en = {
     dateFormatErrorUS: 'Use format MM/DD/YYYY',
     leaseStartHintUS: 'Optional - Example: 02/01/2026',
     leaseEndHintUS: 'Optional - Example: 01/31/2027',
+    ruc: 'RUC',
+    razonSocial: 'Razón Social',
   },
 
   // Maintenance
@@ -383,6 +385,79 @@ export const en = {
     uploadLease: 'Upload Lease',
     changeLeaseImage: 'Change Image',
     noLeaseUploaded: 'No lease uploaded',
+  },
+
+  // Tenant Profile Setup
+  profileSetup: {
+    title: 'Complete Your Profile',
+    subtitle: 'This information helps your property manager identify and contact you.',
+    continue: 'Continue',
+    fullNamePlaceholder: 'John Doe',
+    emailPlaceholder: 'tenant@example.com',
+    phonePlaceholder: '+595 981 123 456',
+    rucPlaceholder: '0123456789',
+    razonSocialPlaceholder: 'Company S.A.',
+    fullNameRequired: 'Full name is required',
+    phoneRequired: 'Phone number is required',
+  },
+
+  // Onboarding
+  onboarding: {
+    step: 'Step',
+    of: 'of',
+    skip: 'Skip',
+    // Step 1
+    welcomeTitle: 'Welcome to Domia!',
+    welcomeSubtitle: "Let's get your profile ready.",
+    getStarted: 'Get Started',
+    // Step 2
+    whatIsYourName: "What's your name?",
+    namePlaceholder: 'Your name',
+    // Step 3
+    howManyUnits: 'How many units do you own?',
+    units1to10: '1–10 units',
+    units10to30: '10–30 units',
+    units30to50: '30–50 units',
+    perMonth: '/month',
+    selectPlan: 'Select a plan to continue',
+    // Step 4
+    whatToAchieve: 'What do you want to achieve with Domia?',
+    moreTime: 'More time for other important things',
+    moreVisibility: 'More visibility over my properties',
+    whoIsPaying: "Know who is paying and who isn't",
+    moreOrganized: 'Be more organized with files and documents',
+    financialClarity: 'Financial Clarity',
+    lessStress: 'Be less stressed out, live more',
+    selectGoal: 'Select at least one goal',
+    // Step 5
+    commitmentText: 'I, {name}, will use Domia to {goal}.',
+    tapAndHold: 'Tap and hold the logo to commit',
+    holdToCommit: 'Keep holding...',
+    committed: 'Committed! ✓',
+    // Step 6
+    trialTitle: 'We offer 7 days of premium access, just for you',
+    trialSubtitle: 'to help you {goal}.',
+    trialFeature1: 'Unlimited tenant management',
+    trialFeature2: 'Real-time payment tracking',
+    trialFeature3: 'Maintenance request system',
+    startTrial: 'Start My Free Trial',
+    // Step 7
+    reminderTitle: "We'll send you a reminder 1 day before your trial ends",
+    reminderSubtitle: 'No surprise, no pressure.',
+    gotIt: 'Got It',
+    // Step 8
+    yourPlan: 'Your Plan',
+    startFreeTrialCta: 'Start 7-Day Free Trial',
+    trialDisclaimer: 'Once your trial ends you will be charged. Cancel anytime in the app.',
+    processingPurchase: 'Processing...',
+    purchaseError: 'Purchase failed. Please try again.',
+    // Goal short labels (for commitment screen)
+    goalMoreTime: 'have more time for what matters',
+    goalVisibility: 'have more visibility over your properties',
+    goalPayments: 'always know who is paying',
+    goalOrganized: 'stay organized with files',
+    goalClarity: 'have more financial clarity',
+    goalLessStress: 'live with less stress',
   },
 };
 

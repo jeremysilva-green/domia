@@ -70,6 +70,8 @@ export default function EditTenantScreen() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState(prefillPhone());
+  const [ruc, setRuc] = useState('');
+  const [razonSocial, setRazonSocial] = useState('');
   const [rentAmount, setRentAmount] = useState('');
   const [leaseStart, setLeaseStart] = useState('');
   const [leaseEnd, setLeaseEnd] = useState('');
@@ -102,6 +104,8 @@ export default function EditTenantScreen() {
       setFullName(tenant.full_name || '');
       setEmail(tenant.email || '');
       setPhone(prefillPhone(tenant.phone));
+      setRuc((tenant as any).ruc || '');
+      setRazonSocial((tenant as any).razon_social || '');
       setRentAmount(tenant.rent_amount?.toString() || '');
       setLeaseStart(formatDateForDisplay(tenant.lease_start || '', isSpanish));
       setLeaseEnd(formatDateForDisplay(tenant.lease_end || '', isSpanish));
@@ -116,6 +120,8 @@ export default function EditTenantScreen() {
           full_name: fullName.trim(),
           email: email.trim(),
           phone: phone.trim(),
+          ruc: ruc.trim() || null,
+          razon_social: razonSocial.trim() || null,
           rent_amount: parseFloat(rentAmount),
           lease_start: formatDateForDatabase(leaseStart, isSpanish) || null,
           lease_end: formatDateForDatabase(leaseEnd, isSpanish) || null,
@@ -247,6 +253,22 @@ export default function EditTenantScreen() {
               onChangeText={setPhone}
               keyboardType="phone-pad"
               error={errors.phone}
+            />
+
+            <Input
+              label={t.tenants.ruc}
+              placeholder="0123456789"
+              value={ruc}
+              onChangeText={setRuc}
+              keyboardType="number-pad"
+            />
+
+            <Input
+              label={t.tenants.razonSocial}
+              placeholder="Empresa S.A."
+              value={razonSocial}
+              onChangeText={setRazonSocial}
+              autoCapitalize="words"
             />
           </Card>
 

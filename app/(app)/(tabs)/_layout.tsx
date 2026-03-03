@@ -455,18 +455,13 @@ function MaintenanceCard({ request }: { request: MaintenanceRequestWithImages })
   return (
     <Card style={contentStyles.requestCard} onPress={() => router.push(`/(app)/maintenance/${request.id}`)}>
       <View style={contentStyles.cardHeader}>
-        <View style={contentStyles.cardInfo}>
-          <Text style={contentStyles.requestTitle} numberOfLines={1}>{request.title}</Text>
-          <Text style={contentStyles.requestLocation} numberOfLines={1}>
-            {request.unit?.property?.name}
-            {request.unit?.unit_number && ` - ${request.unit.unit_number}`}
-          </Text>
-        </View>
-        <StatusBadge status={request.status} type="maintenance" size="sm" />
+        <Text style={contentStyles.requestTitle} numberOfLines={1}>{request.title}</Text>
+        <StatusBadge status={request.status} type="maintenance" />
       </View>
-      <Text style={contentStyles.requestDescription} numberOfLines={2}>{request.description}</Text>
       <View style={contentStyles.cardFooter}>
-        <Text style={contentStyles.requestDate}>{format(new Date(request.created_at), 'MMM d, yyyy')}</Text>
+        {(request as any).tenant?.full_name && (
+          <Text style={contentStyles.requestLocation}>{(request as any).tenant.full_name}</Text>
+        )}
         {request.urgency === 'emergency' && (
           <View style={contentStyles.urgencyBadge}>
             <Text style={contentStyles.urgencyText}>Urgent</Text>
@@ -474,9 +469,10 @@ function MaintenanceCard({ request }: { request: MaintenanceRequestWithImages })
         )}
         {request.urgency === 'high' && (
           <View style={[contentStyles.urgencyBadge, contentStyles.urgencyHigh]}>
-            <Text style={[contentStyles.urgencyText, contentStyles.urgencyTextHigh]}>High Priority</Text>
+            <Text style={[contentStyles.urgencyText, contentStyles.urgencyTextHigh]}>High</Text>
           </View>
         )}
+        <Text style={contentStyles.requestDate}>{format(new Date(request.created_at), 'MMM d, yyyy')}</Text>
       </View>
     </Card>
   );
@@ -510,7 +506,11 @@ function MaintenanceContent() {
         .or(`owner_id.eq.${owner.id}${tenantIds.length > 0 ? `,tenant_id.in.(${tenantIds.join(',')})` : ''}`)
         .order('created_at', { ascending: false });
 
-      if (activeFilter !== 'all') query = query.eq('status', activeFilter);
+      if (activeFilter === 'all') {
+        query = query.not('status', 'in', '("completed","cancelled")');
+      } else {
+        query = query.eq('status', activeFilter);
+      }
       const { data, error } = await query;
       if (error) throw error;
       return data || [];
@@ -617,7 +617,7 @@ function NotificationsContent() {
       if (error) throw error;
       return data || [];
     },
-    enabled: !!owner?.id && showUnitModal,
+    enabled: !!owner?.id,
   });
 
   const approveRequest = useMutation({
@@ -888,7 +888,6 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
         <Text style={contentStyles.screenTitle}>{t.settings.title}</Text>
 
         <View style={contentStyles.settingsSection}>
-          <Text style={contentStyles.settingsSectionTitle}>{language === 'es' ? 'Moneda de visualización' : 'Display Currency'}</Text>
           <Card>
             <TouchableOpacity
               style={contentStyles.displayCurrencyRow}
@@ -1242,9 +1241,9 @@ const contentStyles = StyleSheet.create({
   emptySubtitle: { ...typography.body, color: colors.text.secondary, textAlign: 'center', marginBottom: spacing.lg },
   emptyButton: { marginTop: spacing.md },
   filtersContainer: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginBottom: spacing.md, gap: spacing.xs },
-  filterButton: { paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: borderRadius.full, backgroundColor: colors.surfaceLight },
+  filterButton: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: borderRadius.full, backgroundColor: colors.surfaceLight },
   filterButtonActive: { backgroundColor: '#facc15' },
-  filterText: { fontSize: 12, fontWeight: '500', color: colors.text.secondary },
+  filterText: { fontSize: 13, fontWeight: '500', color: colors.text.secondary },
   filterTextActive: { color: colors.background },
   requestCard: { marginBottom: spacing.md },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.sm },

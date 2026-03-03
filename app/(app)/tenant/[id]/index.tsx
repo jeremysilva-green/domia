@@ -282,14 +282,14 @@ export default function TenantDetailScreen() {
   });
 
   const handlePickLeaseImage = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
 
     if (!permissionResult.granted) {
       Alert.alert(t.properties.permissionRequired, t.properties.permissionMessage);
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
+    const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       allowsEditing: false,
       quality: 0.85,
@@ -451,8 +451,17 @@ export default function TenantDetailScreen() {
             <>
               <View style={styles.divider} />
               <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>RUC</Text>
+                <Text style={styles.infoLabel}>{t.tenants.ruc}</Text>
                 <Text style={styles.infoValue}>{(tenant as any).ruc}</Text>
+              </View>
+            </>
+          ) : null}
+          {(tenant as any).razon_social ? (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>{t.tenants.razonSocial}</Text>
+                <Text style={styles.infoValue}>{(tenant as any).razon_social}</Text>
               </View>
             </>
           ) : null}

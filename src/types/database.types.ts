@@ -21,6 +21,12 @@ export interface Database {
           bank_account_number: string | null;
           bank_ruc: string | null;
           bank_alias: string | null;
+          onboarding_completed: boolean;
+          display_name: string | null;
+          plan_type: string | null;
+          subscription_status: string;
+          trial_started_at: string | null;
+          subscription_product_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -35,6 +41,12 @@ export interface Database {
           bank_account_number?: string | null;
           bank_ruc?: string | null;
           bank_alias?: string | null;
+          onboarding_completed?: boolean;
+          display_name?: string | null;
+          plan_type?: string | null;
+          subscription_status?: string;
+          trial_started_at?: string | null;
+          subscription_product_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -49,6 +61,12 @@ export interface Database {
           bank_account_number?: string | null;
           bank_ruc?: string | null;
           bank_alias?: string | null;
+          onboarding_completed?: boolean;
+          display_name?: string | null;
+          plan_type?: string | null;
+          subscription_status?: string;
+          trial_started_at?: string | null;
+          subscription_product_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -157,6 +175,7 @@ export interface Database {
           email: string | null;
           phone: string | null;
           ruc: string | null;
+          razon_social: string | null;
           rent_amount: number | null;
           lease_start: string | null;
           lease_end: string | null;
@@ -176,6 +195,7 @@ export interface Database {
           email?: string | null;
           phone?: string | null;
           ruc?: string | null;
+          razon_social?: string | null;
           rent_amount?: number | null;
           lease_start?: string | null;
           lease_end?: string | null;
@@ -195,6 +215,7 @@ export interface Database {
           email?: string | null;
           phone?: string | null;
           ruc?: string | null;
+          razon_social?: string | null;
           rent_amount?: number | null;
           lease_start?: string | null;
           lease_end?: string | null;

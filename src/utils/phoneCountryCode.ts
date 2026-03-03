@@ -68,7 +68,7 @@ export function getDeviceCallingCode(): string {
       return REGION_TO_CALLING_CODE[regionCode];
     }
   } catch {}
-  return '+1';
+  return '+595';
 }
 
 /**

@@ -11,7 +11,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Localization from 'expo-localization';
+import { decode } from 'base64-arraybuffer';
 import { Feather } from '@expo/vector-icons';
 
 const COUNTRY_PHONE_EXAMPLES: Record<string, string> = {
@@ -71,13 +73,13 @@ export default function TenantSettingsScreen() {
       const ext = asset.uri.split('.').pop() || 'jpg';
       const filePath = `tenant-${user!.id}.${ext}`;
 
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
-      const arrayBuffer = await blob.arrayBuffer();
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: 'base64',
+      });
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, arrayBuffer, {
+        .upload(filePath, decode(base64), {
           contentType: `image/${ext}`,
           upsert: true,
         });
@@ -93,7 +95,7 @@ export default function TenantSettingsScreen() {
       // Sync to tenants table so the owner can see the photo (e.g. on maintenance cards)
       await supabase
         .from('tenants')
-        .update({ profile_image_url: publicUrl })
+        .update({ profile_image_url: publicUrl } as any)
         .eq('id', user!.id);
     } catch (err: any) {
       Alert.alert(t.common.error, err.message || 'Failed to upload photo.');

@@ -43,6 +43,16 @@ export default function MaintenanceDetailScreen() {
 
       if (error) throw error;
 
+      // Convert storage_path → public URL for images
+      if (data.images && data.images.length > 0) {
+        data.images = data.images.map((img: any) => ({
+          ...img,
+          image_url: img.image_url || supabase.storage
+            .from('maintenance-images')
+            .getPublicUrl(img.storage_path).data.publicUrl,
+        }));
+      }
+
       // Resolve tenant name if missing
       if (data && data.tenant_id && !data.submitter_name && !data.tenant?.full_name) {
         const { data: conn } = await supabase
@@ -58,6 +68,23 @@ export default function MaintenanceDetailScreen() {
     enabled: !!id,
   });
 
+  const markInProgress = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from('maintenance_requests')
+        .update({ status: 'in_progress' } as any)
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['maintenance-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['maintenance-request', id] });
+    },
+    onError: (error: any) => {
+      Alert.alert(t.common.error, error.message);
+    },
+  });
+
   const markFixed = useMutation({
     mutationFn: async () => {
       const { error } = await supabase
@@ -69,6 +96,7 @@ export default function MaintenanceDetailScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['maintenance-requests'] });
       queryClient.invalidateQueries({ queryKey: ['maintenance-request', id] });
+      router.back();
     },
     onError: (error: any) => {
       Alert.alert(t.common.error, error.message);
@@ -199,6 +227,24 @@ export default function MaintenanceDetailScreen() {
               ))}
             </View>
           </View>
+        )}
+
+        {/* In Progress button — only show when still submitted */}
+        {request.status === 'submitted' && (
+          <TouchableOpacity
+            style={styles.inProgressButton}
+            onPress={() => markInProgress.mutate()}
+            disabled={markInProgress.isPending}
+          >
+            {markInProgress.isPending ? (
+              <ActivityIndicator size="small" color={colors.white} />
+            ) : (
+              <>
+                <Feather name="clock" size={18} color={colors.background} />
+                <Text style={styles.inProgressButtonText}>{t.maintenance.inProgress}</Text>
+              </>
+            )}
+          </TouchableOpacity>
         )}
 
         {/* Mark fixed button */}
@@ -336,6 +382,21 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     borderRadius: borderRadius.md,
     backgroundColor: colors.surfaceLight,
+  },
+  inProgressButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.yellow,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    marginTop: spacing.md,
+  },
+  inProgressButtonText: {
+    ...typography.body,
+    fontWeight: '700',
+    color: colors.background,
   },
   fixedButton: {
     flexDirection: 'row',

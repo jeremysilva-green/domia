@@ -9,6 +9,7 @@ interface TenantProfile {
   email: string | null;
   phone: string | null;
   ruc: string | null;
+  razon_social: string | null;
   unit_id: string | null;
   owner_id: string | null;
   status: string;
@@ -42,6 +43,11 @@ interface AuthState {
     bank_account_number?: string | null;
     bank_ruc?: string | null;
     bank_alias?: string | null;
+  }) => Promise<void>;
+  completeOnboarding: (params: {
+    displayName: string;
+    planType: string;
+    productId: string;
   }) => Promise<void>;
 }
 
@@ -149,6 +155,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         email: user.email || null,
         phone: metadata?.phone || null,
         ruc: metadata?.ruc || null,
+        razon_social: metadata?.razon_social || null,
         unit_id: metadata?.unit_id || null,
         owner_id: metadata?.owner_id || null,
         status: metadata?.owner_id ? 'connected' : 'pending',
@@ -251,5 +258,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } finally {
       set({ isLoading: false });
     }
+  },
+
+  completeOnboarding: async ({ displayName, planType, productId }) => {
+    const owner = get().owner;
+    if (!owner) return;
+
+    const { error } = await supabase
+      .from('owners')
+      .update({
+        onboarding_completed: true,
+        display_name: displayName,
+        plan_type: planType,
+        subscription_status: 'trial',
+        trial_started_at: new Date().toISOString(),
+        subscription_product_id: productId,
+      } as any)
+      .eq('id', owner.id);
+
+    if (error) throw error;
+
+    await get().fetchOwnerProfile();
   },
 }));
