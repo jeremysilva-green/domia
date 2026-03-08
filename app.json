@@ -4,7 +4,7 @@
     "slug": "domus",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/Domia Splash.png",
+    "icon": "./assets/Domia app icon.png",
     "scheme": "domus",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -19,12 +19,12 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/Domia Splash.png",
+        "foregroundImage": "./assets/Domia app icon.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.domus.app",
-      "versionCode": 7,
+      "versionCode": 10,
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
