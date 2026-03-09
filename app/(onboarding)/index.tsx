@@ -16,7 +16,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { getLocales } from 'expo-localization';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useI18n } from '../../src/i18n';
 import { colors, spacing, typography, borderRadius } from '../../src/constants/theme';
@@ -27,7 +26,7 @@ import {
   PlanType,
 } from '../../src/stores/subscriptionStore';
 
-const TOTAL_STEPS = 8;
+const TOTAL_STEPS = 7;
 
 type GoalKey =
   | 'moreTime'
@@ -48,7 +47,7 @@ const GOAL_SHORT_KEYS: Record<GoalKey, string> = {
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const { t, setLanguage } = useI18n();
+  const { t } = useI18n();
   const { owner, completeOnboarding, fetchOwnerProfile } = useAuthStore();
   const { initConnection, purchasePlan, isPurchasing } = useSubscriptionStore();
 
@@ -69,16 +68,6 @@ export default function OnboardingScreen() {
 
   // Progress bar
   const progressAnim = useRef(new Animated.Value(1 / TOTAL_STEPS)).current;
-
-  // Detect device language on mount
-  useEffect(() => {
-    try {
-      const locale = getLocales()[0];
-      if (locale?.languageCode === 'es') {
-        setLanguage('es');
-      }
-    } catch {}
-  }, []);
 
   // Init IAP connection
   useEffect(() => {
@@ -165,6 +154,21 @@ export default function OnboardingScreen() {
   const handlePurchase = async () => {
     if (!selectedPlan) return;
 
+    // DEV bypass: skip IAP and complete onboarding directly
+    if (__DEV__) {
+      try {
+        await completeOnboarding({
+          displayName: displayName.trim() || owner?.full_name || '',
+          planType: selectedPlan,
+          productId: PLAN_PRODUCT_IDS[selectedPlan],
+        });
+        router.replace('/(app)/(tabs)');
+      } catch (e: any) {
+        Alert.alert('Error', e.message);
+      }
+      return;
+    }
+
     purchasePlan(
       selectedPlan,
       async () => {
@@ -226,28 +230,7 @@ export default function OnboardingScreen() {
 
   // ── Step renderers ───────────────────────────────────────────────────────
 
-  // STEP 1 — Welcome
-  const renderStep1 = () => (
-    <View style={s.fullScreen}>
-      <View style={s.welcomeContent}>
-        <Image
-          source={require('../../assets/Domia Logo Crop.png')}
-          style={s.welcomeLogo}
-          resizeMode="contain"
-        />
-        <Text style={s.welcomeTitle}>{t.onboarding.welcomeTitle}</Text>
-        <Text style={s.welcomeSubtitle}>{t.onboarding.welcomeSubtitle}</Text>
-      </View>
-      <View style={s.welcomeFooter}>
-        <TouchableOpacity style={s.getStartedBtn} onPress={goNext} activeOpacity={0.85}>
-          <Text style={s.getStartedText}>{t.onboarding.getStarted}</Text>
-          <Feather name="arrow-right" size={18} color={colors.background} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  // STEP 2 — Name
+  // STEP 1 — Name (previously Step 2)
   const renderStep2 = () => (
     <View style={s.stepContainer}>
       {renderHeader(true, false)}
@@ -272,10 +255,10 @@ export default function OnboardingScreen() {
   );
 
   // STEP 3 — Plan selection
-  const plans: { key: PlanType; label: string }[] = [
-    { key: '1-10', label: t.onboarding.units1to10 },
-    { key: '10-30', label: t.onboarding.units10to30 },
-    { key: '30-50', label: t.onboarding.units30to50 },
+  const plans: { key: PlanType; name: string; label: string }[] = [
+    { key: '1-10', name: t.onboarding.planStarter, label: t.onboarding.units1to10 },
+    { key: '10-30', name: t.onboarding.planPro, label: t.onboarding.units10to30 },
+    { key: '30-50', name: t.onboarding.planBusiness, label: t.onboarding.units30to50 },
   ];
 
   const renderStep3 = () => (
@@ -293,9 +276,14 @@ export default function OnboardingScreen() {
                 onPress={() => setSelectedPlan(plan.key)}
                 activeOpacity={0.8}
               >
-                <Text style={[s.planPillLabel, isSelected && s.pillTextSelected]}>
-                  {plan.label}
-                </Text>
+                <View style={s.planPillInfo}>
+                  <Text style={[s.planPillName, isSelected && s.pillTextSelected]}>
+                    {plan.name}
+                  </Text>
+                  <Text style={[s.planPillLabel, isSelected && s.pillTextSelectedMuted]}>
+                    {plan.label}
+                  </Text>
+                </View>
                 <Text style={[s.planPillPrice, isSelected && s.pillTextSelected]}>
                   {PLAN_PRICES[plan.key]}
                 </Text>
@@ -495,9 +483,14 @@ export default function OnboardingScreen() {
                 onPress={() => setSelectedPlan(plan.key)}
                 activeOpacity={0.8}
               >
-                <Text style={[s.planPillLabel, isSelected && s.pillTextSelected]}>
-                  {plan.label}
-                </Text>
+                <View style={s.planPillInfo}>
+                  <Text style={[s.planPillName, isSelected && s.pillTextSelected]}>
+                    {plan.name}
+                  </Text>
+                  <Text style={[s.planPillLabel, isSelected && s.pillTextSelectedMuted]}>
+                    {plan.label}
+                  </Text>
+                </View>
                 <Text style={[s.planPillPrice, isSelected && s.pillTextSelected]}>
                   {PLAN_PRICES[plan.key]}
                 </Text>
@@ -544,30 +537,27 @@ export default function OnboardingScreen() {
     >
       <View style={s.overlay}>
         <SafeAreaView style={s.container} edges={['top', 'bottom']}>
-          {step > 1 && (
-            <View style={s.progressTrack}>
-              <Animated.View
-                style={[
-                  s.progressFill,
-                  {
-                    width: progressAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['0%', '100%'],
-                    }),
-                  },
-                ]}
-              />
-            </View>
-          )}
+          <View style={s.progressTrack}>
+            <Animated.View
+              style={[
+                s.progressFill,
+                {
+                  width: progressAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0%', '100%'],
+                  }),
+                },
+              ]}
+            />
+          </View>
           <Animated.View style={[{ flex: 1 }, { transform: [{ translateX: slideAnim }] }]}>
-            {step === 1 && renderStep1()}
-            {step === 2 && renderStep2()}
-            {step === 3 && renderStep3()}
-            {step === 4 && renderStep4()}
-            {step === 5 && renderStep5()}
-            {step === 6 && renderStep6()}
-            {step === 7 && renderStep7()}
-            {step === 8 && renderStep8()}
+            {step === 1 && renderStep2()}
+            {step === 2 && renderStep3()}
+            {step === 3 && renderStep4()}
+            {step === 4 && renderStep5()}
+            {step === 5 && renderStep6()}
+            {step === 6 && renderStep7()}
+            {step === 7 && renderStep8()}
           </Animated.View>
         </SafeAreaView>
       </View>
@@ -692,10 +682,20 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  planPillLabel: {
+  planPillInfo: {
+    flexDirection: 'column',
+  },
+  planPillName: {
     ...typography.body,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.text.primary,
+  },
+  planPillLabel: {
+    ...typography.bodySmall,
+    color: colors.text.secondary,
+  },
+  pillTextSelectedMuted: {
+    color: 'rgba(0,0,0,0.55)',
   },
   planPillPrice: {
     ...typography.body,

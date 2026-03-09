@@ -6,14 +6,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link, useRouter } from 'expo-router';
+import { Link, useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '../../src/stores/authStore';
-import { Button, Input } from '../../src/components/ui';
+import { Button, Input, ConfirmDialog } from '../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../src/constants/theme';
 import { UserRole } from '../../src/types';
 import { useI18n } from '../../src/i18n';
@@ -21,7 +21,10 @@ import { useI18n } from '../../src/i18n';
 export default function RegisterScreen() {
   const { t } = useI18n();
   const router = useRouter();
-  const [role, setRole] = useState<UserRole | null>(null);
+  const { role: roleParam } = useLocalSearchParams<{ role?: string }>();
+  const preselectedRole: UserRole | null =
+    roleParam === 'owner' ? 'owner' : roleParam === 'tenant' ? 'tenant' : null;
+  const [role, setRole] = useState<UserRole | null>(preselectedRole);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -35,6 +38,7 @@ export default function RegisterScreen() {
   }>({});
 
   const { signUp, isLoading } = useAuthStore();
+  const [dialog, setDialog] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   const validate = () => {
     const newErrors: typeof errors = {};
@@ -72,13 +76,17 @@ export default function RegisterScreen() {
 
     try {
       await signUp(email.trim(), password, fullName.trim(), role);
-      Alert.alert(
-        t.auth.accountCreated,
-        t.auth.verifyEmail,
-        [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }]
-      );
+      setDialog({
+        title: t.auth.accountCreated,
+        message: t.auth.verifyEmail,
+        onConfirm: () => { setDialog(null); router.replace('/(auth)/login'); },
+      });
     } catch (error: any) {
-      Alert.alert(t.auth.registerFailed, error.message || t.common.error);
+      setDialog({
+        title: t.auth.registerFailed,
+        message: error.message || t.common.error,
+        onConfirm: () => setDialog(null),
+      });
     }
   };
 
@@ -94,7 +102,11 @@ export default function RegisterScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
-            <Text style={styles.logo}>Domus</Text>
+            <Image
+              source={require('../../assets/Domia Logo Crop.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
           </View>
 
           <View style={styles.form}>
@@ -103,61 +115,63 @@ export default function RegisterScreen() {
               {t.auth.joinSubtitle}
             </Text>
 
-            <View style={styles.roleSection}>
-              <Text style={styles.roleLabel}>{t.auth.iAm}</Text>
-              <View style={styles.roleOptions}>
-                <TouchableOpacity
-                  style={[
-                    styles.roleButton,
-                    role === 'owner' && styles.roleButtonActive,
-                  ]}
-                  onPress={() => setRole('owner')}
-                >
-                  <Feather
-                    name="home"
-                    size={24}
-                    color={role === 'owner' ? colors.yellow : colors.text.secondary}
-                  />
-                  <Text
+            {!preselectedRole && (
+              <View style={styles.roleSection}>
+                <Text style={styles.roleLabel}>{t.auth.iAm}</Text>
+                <View style={styles.roleOptions}>
+                  <TouchableOpacity
                     style={[
-                      styles.roleButtonText,
-                      role === 'owner' && styles.roleButtonTextActive,
+                      styles.roleButton,
+                      role === 'owner' && styles.roleButtonActive,
                     ]}
+                    onPress={() => setRole('owner')}
                   >
-                    {t.auth.propertyOwner}
-                  </Text>
-                  <Text style={styles.roleDescription}>
-                    {t.auth.managePropertiesDesc}
-                  </Text>
-                </TouchableOpacity>
+                    <Feather
+                      name="home"
+                      size={24}
+                      color={role === 'owner' ? colors.yellow : colors.text.secondary}
+                    />
+                    <Text
+                      style={[
+                        styles.roleButtonText,
+                        role === 'owner' && styles.roleButtonTextActive,
+                      ]}
+                    >
+                      {t.auth.propertyOwner}
+                    </Text>
+                    <Text style={styles.roleDescription}>
+                      {t.auth.managePropertiesDesc}
+                    </Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[
-                    styles.roleButton,
-                    role === 'tenant' && styles.roleButtonActive,
-                  ]}
-                  onPress={() => setRole('tenant')}
-                >
-                  <Feather
-                    name="user"
-                    size={24}
-                    color={role === 'tenant' ? colors.yellow : colors.text.secondary}
-                  />
-                  <Text
+                  <TouchableOpacity
                     style={[
-                      styles.roleButtonText,
-                      role === 'tenant' && styles.roleButtonTextActive,
+                      styles.roleButton,
+                      role === 'tenant' && styles.roleButtonActive,
                     ]}
+                    onPress={() => setRole('tenant')}
                   >
-                    {t.auth.tenant}
-                  </Text>
-                  <Text style={styles.roleDescription}>
-                    {t.auth.connectWithLandlordDesc}
-                  </Text>
-                </TouchableOpacity>
+                    <Feather
+                      name="user"
+                      size={24}
+                      color={role === 'tenant' ? colors.yellow : colors.text.secondary}
+                    />
+                    <Text
+                      style={[
+                        styles.roleButtonText,
+                        role === 'tenant' && styles.roleButtonTextActive,
+                      ]}
+                    >
+                      {t.auth.tenant}
+                    </Text>
+                    <Text style={styles.roleDescription}>
+                      {t.auth.connectWithLandlordDesc}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {errors.role && <Text style={styles.errorText}>{errors.role}</Text>}
               </View>
-              {errors.role && <Text style={styles.errorText}>{errors.role}</Text>}
-            </View>
+            )}
 
             <Input
               label={t.auth.fullName}
@@ -218,6 +232,15 @@ export default function RegisterScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <ConfirmDialog
+        visible={!!dialog}
+        title={dialog?.title || ''}
+        message={dialog?.message}
+        confirmText="OK"
+        hideCancel
+        onConfirm={() => dialog?.onConfirm()}
+        onCancel={() => setDialog(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -241,8 +264,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   logo: {
-    fontSize: 36,
-    fontWeight: '700',
+    width: 180,
+    height: 80,
     color: '#facc15',
     letterSpacing: -1,
   },

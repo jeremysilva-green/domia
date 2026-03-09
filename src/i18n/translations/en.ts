@@ -126,6 +126,12 @@ export const en = {
     permissionMessage: 'Please allow access to your photos to upload an image.',
     uploadFailed: 'Failed to upload image',
     createUnitFailed: 'Failed to create unit',
+    importCsv: 'Import CSV',
+    csvImporting: 'Importing…',
+    csvSuccess: (n: number) => `${n} ${n === 1 ? 'property' : 'properties'} imported successfully.`,
+    csvPartial: (ok: number, fail: number) => `${ok} imported, ${fail} failed. Check that all rows have a name and address.`,
+    csvEmpty: 'No valid rows found. Make sure your CSV has columns: Property Name, Address, City, Property Type.',
+    csvReadError: 'Could not read the file. Please try again.',
   },
 
   // Units
@@ -258,6 +264,14 @@ export const en = {
     app: 'App',
     version: 'Version',
     footer: 'Domia - Property Management',
+    deleteAccount: 'Delete Account',
+    deleteAccountWarningTitle: 'Before You Delete',
+    deleteAccountWarningBody: 'Deleting your account does not cancel your Google Play subscription. To avoid future charges, please cancel your subscription in Google Play first.',
+    manageSubscription: 'Manage Google Play Subscription',
+    continueToDelete: 'Continue to Delete',
+    deleteAccountConfirmTitle: 'Delete Account?',
+    deleteAccountConfirmMsg: 'This will permanently delete all your properties, units, tenants, and data. This cannot be undone.',
+    deleteAccountFailed: 'Failed to delete account. Please try again.',
   },
 
   // Notifications / Connection Requests
@@ -278,6 +292,10 @@ export const en = {
     noVacantUnitsSubtitle: 'All your units are currently occupied. Add more units or wait for a vacancy.',
     approvalSuccess: 'Connection request approved. Tenant has been assigned to the unit.',
     declineSuccess: 'Connection request declined.',
+    clearAll: 'Clear All',
+    clearAllConfirm: 'Clear All Notifications',
+    clearAllConfirmMsg: 'This will remove all notifications from your inbox. This action cannot be undone.',
+    clearAllSuccess: 'All notifications cleared.',
   },
 
   // Tenant - Property Search
@@ -326,6 +344,7 @@ export const en = {
     disconnect: 'Disconnect from Owner',
     disconnectConfirm: 'Disconnect',
     disconnectConfirmMsg: 'Are you sure you want to disconnect from your owner? You can reconnect later by finding your owner again.',
+    whatsapp: 'WhatsApp',
   },
 
   // Tenant Requests
@@ -350,6 +369,9 @@ export const en = {
     submitFailed: 'Failed to submit request',
     imageLimit: 'Limit Reached',
     imageLimitMsg: 'You can only upload up to 5 images',
+    clearAll: 'Clear All',
+    clearAllConfirm: 'Clear All Requests',
+    clearAllConfirmMsg: 'This will hide all requests from your list.',
   },
 
   // Bank Info
@@ -401,12 +423,41 @@ export const en = {
     phoneRequired: 'Phone number is required',
   },
 
+  // Tenant Inbox
+  inbox: {
+    title: 'Inbox',
+    empty: 'No notifications',
+    emptySubtitle: "You'll see updates here when your landlord takes action.",
+    connectionApproved: 'Connection Approved',
+    connectionApprovedMsg: 'Your request to connect was approved',
+    connectionRejected: 'Connection Declined',
+    connectionRejectedMsg: 'Your connection request was declined',
+    leaseUploaded: 'Lease Document',
+    leaseUploadedMsg: 'Your landlord has uploaded a lease document',
+    maintenanceInProgress: 'Request In Progress',
+    maintenanceCompleted: 'Request Completed',
+    clearAll: 'Clear All',
+    clearAllConfirm: 'Clear All Notifications',
+    clearAllConfirmMsg: 'This will remove all notifications from your inbox.',
+  },
+
   // Onboarding
   onboarding: {
     step: 'Step',
     of: 'of',
     skip: 'Skip',
-    // Step 1
+    // Pre-auth intro slides
+    introTagline: 'The smart way to manage rentals.',
+    introRoleQuestion: 'I am a...',
+    introOwnerRole: 'Property Owner',
+    introTenantRole: 'Tenant',
+    introGetStarted: 'Get Started',
+    introSlide2: 'Manage properties, leases, and payments in one place.',
+    introSlide3: 'Never miss a rent due date again.',
+    introCreateAccount: 'Create Account',
+    introAlreadyHaveAccount: 'Already have an account?',
+    introSignIn: 'Sign In',
+    // Step 1 (legacy - kept for compatibility)
     welcomeTitle: 'Welcome to Domia!',
     welcomeSubtitle: "Let's get your profile ready.",
     getStarted: 'Get Started',
@@ -415,9 +466,12 @@ export const en = {
     namePlaceholder: 'Your name',
     // Step 3
     howManyUnits: 'How many units do you own?',
+    planStarter: 'Starter',
+    planPro: 'Pro',
+    planBusiness: 'Business',
     units1to10: '1–10 units',
     units10to30: '10–30 units',
-    units30to50: '30–50 units',
+    units30to50: 'Unlimited',
     perMonth: '/month',
     selectPlan: 'Select a plan to continue',
     // Step 4

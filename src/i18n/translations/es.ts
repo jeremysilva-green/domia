@@ -73,7 +73,7 @@ export const es: Translations = {
     home: 'Inicio',
     properties: 'Propiedades',
     requests: 'Solicitudes',
-    settings: 'Configuración',
+    settings: 'Config',
     notifications: 'Notificaciones',
     inbox: 'Bandeja',
     owners: 'Propiedades',
@@ -128,6 +128,12 @@ export const es: Translations = {
     permissionMessage: 'Por favor permite el acceso a tus fotos para subir una imagen.',
     uploadFailed: 'Error al subir imagen',
     createUnitFailed: 'Error al crear unidad',
+    importCsv: 'Importar CSV',
+    csvImporting: 'Importando…',
+    csvSuccess: (n: number) => `${n} ${n === 1 ? 'propiedad importada' : 'propiedades importadas'} exitosamente.`,
+    csvPartial: (ok: number, fail: number) => `${ok} importadas, ${fail} fallidas. Verifica que todas las filas tengan nombre y dirección.`,
+    csvEmpty: 'No se encontraron filas válidas. Asegúrate de que el CSV tenga las columnas: Nombre de la Propiedad, Dirección, Ciudad, Tipo de Propiedad.',
+    csvReadError: 'No se pudo leer el archivo. Por favor intenta de nuevo.',
   },
 
   // Units
@@ -260,6 +266,14 @@ export const es: Translations = {
     app: 'App',
     version: 'Versión',
     footer: 'Domia - Administración de Propiedades',
+    deleteAccount: 'Eliminar Cuenta',
+    deleteAccountWarningTitle: 'Antes de Eliminar',
+    deleteAccountWarningBody: 'Eliminar tu cuenta no cancela tu suscripción de Google Play. Para evitar cargos futuros, cancela tu suscripción en Google Play primero.',
+    manageSubscription: 'Administrar Suscripción de Google Play',
+    continueToDelete: 'Continuar para Eliminar',
+    deleteAccountConfirmTitle: '¿Eliminar Cuenta?',
+    deleteAccountConfirmMsg: 'Esto eliminará permanentemente todas tus propiedades, unidades, inquilinos y datos. Esta acción no se puede deshacer.',
+    deleteAccountFailed: 'No se pudo eliminar la cuenta. Por favor, intenta de nuevo.',
   },
 
   // Notifications / Connection Requests
@@ -280,6 +294,10 @@ export const es: Translations = {
     noVacantUnitsSubtitle: 'Todas tus unidades están ocupadas. Agrega más unidades o espera a que haya una vacante.',
     approvalSuccess: 'Solicitud de conexión aprobada. El inquilino ha sido asignado a la unidad.',
     declineSuccess: 'Solicitud de conexión rechazada.',
+    clearAll: 'Limpiar Todo',
+    clearAllConfirm: 'Limpiar Notificaciones',
+    clearAllConfirmMsg: 'Esto eliminará todas las notificaciones de tu bandeja. Esta acción no se puede deshacer.',
+    clearAllSuccess: 'Todas las notificaciones fueron eliminadas.',
   },
 
   // Tenant - Property Search
@@ -328,6 +346,7 @@ export const es: Translations = {
     disconnect: 'Desconectarse del Propietario',
     disconnectConfirm: 'Desconectarse',
     disconnectConfirmMsg: '¿Estás seguro de que quieres desconectarte de tu propietario? Puedes reconectarte más tarde buscando a tu propietario nuevamente.',
+    whatsapp: 'WhatsApp',
   },
 
   // Tenant Requests
@@ -352,6 +371,9 @@ export const es: Translations = {
     submitFailed: 'Error al enviar la solicitud',
     imageLimit: 'Límite Alcanzado',
     imageLimitMsg: 'Solo puedes subir hasta 5 imágenes',
+    clearAll: 'Limpiar Todo',
+    clearAllConfirm: 'Limpiar Solicitudes',
+    clearAllConfirmMsg: 'Esto ocultará todas las solicitudes de tu lista.',
   },
 
   // Bank Info
@@ -403,12 +425,41 @@ export const es: Translations = {
     phoneRequired: 'El número de teléfono es requerido',
   },
 
+  // Bandeja de entrada del inquilino
+  inbox: {
+    title: 'Bandeja',
+    empty: 'Sin notificaciones',
+    emptySubtitle: 'Verás actualizaciones aquí cuando tu arrendador tome alguna acción.',
+    connectionApproved: 'Conexión Aprobada',
+    connectionApprovedMsg: 'Tu solicitud de conexión fue aprobada',
+    connectionRejected: 'Conexión Rechazada',
+    connectionRejectedMsg: 'Tu solicitud de conexión fue rechazada',
+    leaseUploaded: 'Contrato de Arrendamiento',
+    leaseUploadedMsg: 'Tu arrendador subió un contrato de arrendamiento',
+    maintenanceInProgress: 'Solicitud en Proceso',
+    maintenanceCompleted: 'Solicitud Completada',
+    clearAll: 'Limpiar Todo',
+    clearAllConfirm: 'Limpiar Notificaciones',
+    clearAllConfirmMsg: 'Esto eliminará todas las notificaciones de tu bandeja.',
+  },
+
   // Incorporación
   onboarding: {
     step: 'Paso',
     of: 'de',
     skip: 'Omitir',
-    // Paso 1
+    // Slides de introducción (pre-registro)
+    introTagline: 'La forma inteligente de administrar alquileres.',
+    introRoleQuestion: 'Soy...',
+    introOwnerRole: 'Propietario',
+    introTenantRole: 'Inquilino',
+    introGetStarted: 'Empezar',
+    introSlide2: 'Administra propiedades, contratos y pagos en un solo lugar.',
+    introSlide3: 'Nunca más olvides un vencimiento de alquiler.',
+    introCreateAccount: 'Crear cuenta',
+    introAlreadyHaveAccount: '¿Ya tienes cuenta?',
+    introSignIn: 'Inicia sesión',
+    // Paso 1 (legado)
     welcomeTitle: '¡Bienvenido a Domia!',
     welcomeSubtitle: 'Preparemos tu perfil.',
     getStarted: 'Comenzar',
@@ -417,9 +468,12 @@ export const es: Translations = {
     namePlaceholder: 'Tu nombre',
     // Paso 3
     howManyUnits: '¿Cuántas unidades tienes?',
+    planStarter: 'Básico',
+    planPro: 'Pro',
+    planBusiness: 'Empresa',
     units1to10: '1–10 unidades',
     units10to30: '10–30 unidades',
-    units30to50: '30–50 unidades',
+    units30to50: 'Ilimitado',
     perMonth: '/mes',
     selectPlan: 'Selecciona un plan para continuar',
     // Paso 4
