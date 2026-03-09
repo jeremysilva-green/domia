@@ -4,14 +4,11 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
   ScrollView,
   Animated,
   Alert,
   Image,
   ImageBackground,
-  PanResponder,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -26,7 +23,7 @@ import {
   PlanType,
 } from '../../src/stores/subscriptionStore';
 
-const TOTAL_STEPS = 7;
+const TOTAL_STEPS = 6;
 
 type GoalKey =
   | 'moreTime'
@@ -48,11 +45,10 @@ const GOAL_SHORT_KEYS: Record<GoalKey, string> = {
 export default function OnboardingScreen() {
   const router = useRouter();
   const { t } = useI18n();
-  const { owner, completeOnboarding, fetchOwnerProfile } = useAuthStore();
+  const { owner, completeOnboarding } = useAuthStore();
   const { initConnection, purchasePlan, isPurchasing } = useSubscriptionStore();
 
   const [step, setStep] = useState(1);
-  const [displayName, setDisplayName] = useState(owner?.full_name || '');
   const [selectedPlan, setSelectedPlan] = useState<PlanType | null>(null);
   const [selectedGoals, setSelectedGoals] = useState<GoalKey[]>([]);
 
@@ -158,7 +154,7 @@ export default function OnboardingScreen() {
     if (__DEV__) {
       try {
         await completeOnboarding({
-          displayName: displayName.trim() || owner?.full_name || '',
+          displayName: owner?.full_name || '',
           planType: selectedPlan,
           productId: PLAN_PRODUCT_IDS[selectedPlan],
         });
@@ -175,7 +171,7 @@ export default function OnboardingScreen() {
         // On success — save to DB and go to app
         try {
           await completeOnboarding({
-            displayName: displayName.trim() || owner?.full_name || '',
+            displayName: owner?.full_name || '',
             planType: selectedPlan,
             productId: PLAN_PRODUCT_IDS[selectedPlan],
           });
@@ -230,31 +226,7 @@ export default function OnboardingScreen() {
 
   // ── Step renderers ───────────────────────────────────────────────────────
 
-  // STEP 1 — Name (previously Step 2)
-  const renderStep2 = () => (
-    <View style={s.stepContainer}>
-      {renderHeader(true, false)}
-      <ScrollView contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
-        <Text style={s.questionText}>{t.onboarding.whatIsYourName}</Text>
-        <TextInput
-          style={s.nameInput}
-          value={displayName}
-          onChangeText={setDisplayName}
-          placeholder={t.onboarding.namePlaceholder}
-          placeholderTextColor={colors.text.disabled}
-          autoFocus
-          autoCapitalize="words"
-          returnKeyType="done"
-        />
-      </ScrollView>
-      <View style={s.bottomNav}>
-        <View style={{ flex: 1 }} />
-        {renderArrowButton(goNext, !displayName.trim())}
-      </View>
-    </View>
-  );
-
-  // STEP 3 — Plan selection
+  // STEP 1 — Plan selection (previously Step 3)
   const plans: { key: PlanType; name: string; label: string }[] = [
     { key: '1-10', name: t.onboarding.planStarter, label: t.onboarding.units1to10 },
     { key: '10-30', name: t.onboarding.planPro, label: t.onboarding.units10to30 },
@@ -360,7 +332,7 @@ export default function OnboardingScreen() {
   });
 
   const commitText = t.onboarding.commitmentText
-    .replace('{name}', displayName || owner?.full_name || '')
+    .replace('{name}', owner?.full_name || '')
     .replace('{goal}', primaryGoalShort);
 
   const renderStep5 = () => (
@@ -551,13 +523,12 @@ export default function OnboardingScreen() {
             />
           </View>
           <Animated.View style={[{ flex: 1 }, { transform: [{ translateX: slideAnim }] }]}>
-            {step === 1 && renderStep2()}
-            {step === 2 && renderStep3()}
-            {step === 3 && renderStep4()}
-            {step === 4 && renderStep5()}
-            {step === 5 && renderStep6()}
-            {step === 6 && renderStep7()}
-            {step === 7 && renderStep8()}
+            {step === 1 && renderStep3()}
+            {step === 2 && renderStep4()}
+            {step === 3 && renderStep5()}
+            {step === 4 && renderStep6()}
+            {step === 5 && renderStep7()}
+            {step === 6 && renderStep8()}
           </Animated.View>
         </SafeAreaView>
       </View>

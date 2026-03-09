@@ -12,8 +12,8 @@ export default function Index() {
     if (userRole === 'tenant') {
       return <Redirect href="/(tenant)/(tabs)" />;
     }
-    // Spin only while userRole hasn't been determined yet (brief window)
-    if (!userRole) {
+    // Spin while role or owner profile is still loading
+    if (!userRole || (userRole === 'owner' && !owner)) {
       return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
           <ActivityIndicator color={colors.yellow} />
@@ -21,7 +21,7 @@ export default function Index() {
       );
     }
     // Owner: redirect to onboarding if not yet completed, otherwise go to app
-    if (owner && !(owner as any).onboarding_completed) {
+    if (userRole === 'owner' && !(owner as any).onboarding_completed) {
       return <Redirect href="/(onboarding)" />;
     }
     return <Redirect href="/(app)/(tabs)" />;
