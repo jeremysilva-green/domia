@@ -1,6 +1,5 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getLocales } from 'expo-localization';
 import { en, Translations } from './translations/en';
 import { es } from './translations/es';
 
@@ -17,30 +16,26 @@ const translations: Record<Language, Translations> = {
   es,
 };
 
-export const useI18n = create<I18nState>()(
-  persist(
-    (set, get) => ({
-      language: 'en',
-      t: en,
-      setLanguage: (lang: Language) => {
-        set({
-          language: lang,
-          t: translations[lang],
-        });
-      },
-    }),
-    {
-      name: 'domus-language',
-      storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({ language: state.language }),
-      onRehydrateStorage: () => (state) => {
-        if (state) {
-          state.t = translations[state.language];
-        }
-      },
-    }
-  )
-);
+// Reads the device's system language. English device → 'en', everything else → 'es'.
+// Defaults to Spanish since the app targets Paraguay.
+function getDeviceLanguage(): Language {
+  try {
+    const locale = getLocales()[0]?.languageCode ?? 'es';
+    return locale === 'en' ? 'en' : 'es';
+  } catch {
+    return 'es';
+  }
+}
+
+const deviceLanguage = getDeviceLanguage();
+
+export const useI18n = create<I18nState>()((set) => ({
+  language: deviceLanguage,
+  t: translations[deviceLanguage],
+  setLanguage: (lang: Language) => {
+    set({ language: lang, t: translations[lang] });
+  },
+}));
 
 export { en, es };
 export type { Translations };

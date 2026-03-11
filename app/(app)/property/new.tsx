@@ -59,6 +59,8 @@ export default function NewPropertyScreen() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['properties'] });
+      queryClient.invalidateQueries({ queryKey: ['properties-with-units'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       router.replace(`/(app)/property/${data.id}`);
     },
     onError: (error: any) => {

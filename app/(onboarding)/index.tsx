@@ -27,16 +27,12 @@ const TOTAL_STEPS = 6;
 
 type GoalKey =
   | 'moreTime'
-  | 'moreVisibility'
-  | 'whoIsPaying'
   | 'moreOrganized'
   | 'financialClarity'
   | 'lessStress';
 
 const GOAL_SHORT_KEYS: Record<GoalKey, string> = {
   moreTime: 'goalMoreTime',
-  moreVisibility: 'goalVisibility',
-  whoIsPaying: 'goalPayments',
   moreOrganized: 'goalOrganized',
   financialClarity: 'goalClarity',
   lessStress: 'goalLessStress',
@@ -274,8 +270,6 @@ export default function OnboardingScreen() {
   // STEP 4 — Goals
   const goals: { key: GoalKey; label: string }[] = [
     { key: 'moreTime', label: t.onboarding.moreTime },
-    { key: 'moreVisibility', label: t.onboarding.moreVisibility },
-    { key: 'whoIsPaying', label: t.onboarding.whoIsPaying },
     { key: 'moreOrganized', label: t.onboarding.moreOrganized },
     { key: 'financialClarity', label: t.onboarding.financialClarity },
     { key: 'lessStress', label: t.onboarding.lessStress },

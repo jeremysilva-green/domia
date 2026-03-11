@@ -223,6 +223,8 @@ export default function TenantDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['tenants'] });
       queryClient.invalidateQueries({ queryKey: ['properties'] });
       queryClient.invalidateQueries({ queryKey: ['property'] });
+      queryClient.invalidateQueries({ queryKey: ['properties-with-units'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       router.back();
     },
     onError: (error: any) => {
@@ -268,7 +270,7 @@ export default function TenantDetailScreen() {
 
       const { error: updateError } = await supabase
         .from('tenants')
-        .update({ lease_image_url: urlData.publicUrl } as any)
+        .update({ lease_image_url: urlData.publicUrl, lease_seen_by_tenant: false } as any)
         .eq('id', id as string);
 
       if (updateError) throw updateError;
@@ -712,7 +714,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.lg,
-    paddingTop: 0,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.xxl,
   },
   tenantHeader: {

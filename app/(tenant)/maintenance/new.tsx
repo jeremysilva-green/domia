@@ -8,13 +8,11 @@ import {
   Platform,
   Alert,
   TouchableOpacity,
-  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../../../src/services/supabase';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { useI18n } from '../../../src/i18n';
@@ -32,7 +30,6 @@ export default function NewTenantMaintenanceScreen() {
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<MaintenanceCategory>('other');
   const [urgency, setUrgency] = useState<MaintenanceUrgency>('normal');
-  const [images, setImages] = useState<string[]>([]);
   const [errors, setErrors] = useState<{ title?: string; description?: string }>({});
   const [submitted, setSubmitted] = useState(false);
 
@@ -94,29 +91,6 @@ export default function NewTenantMaintenanceScreen() {
         .single();
 
       if (requestError) throw requestError;
-
-      // Upload images if any
-      for (let i = 0; i < images.length; i++) {
-        const uri = images[i];
-        const fileName = `${request.id}/${Date.now()}-${i}.jpg`;
-
-        const response = await fetch(uri);
-        const blob = await response.blob();
-
-        const { error: uploadError } = await supabase.storage
-          .from('maintenance-images')
-          .upload(fileName, blob, {
-            contentType: 'image/jpeg',
-          });
-
-        if (!uploadError) {
-          await supabase.from('maintenance_images').insert({
-            maintenance_request_id: request.id,
-            storage_path: fileName,
-          });
-        }
-      }
-
       return request;
     },
     onSuccess: () => {
@@ -128,28 +102,6 @@ export default function NewTenantMaintenanceScreen() {
       Alert.alert(t.common.error, error.message || t.tenantRequests.submitFailed);
     },
   });
-
-  const pickImage = async () => {
-    if (images.length >= 5) {
-      Alert.alert(t.tenantRequests.imageLimit, t.tenantRequests.imageLimitMsg);
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      setImages([...images, result.assets[0].uri]);
-    }
-  };
-
-  const removeImage = (index: number) => {
-    setImages(images.filter((_, i) => i !== index));
-  };
 
   const validate = () => {
     const newErrors: typeof errors = {};
@@ -288,32 +240,6 @@ export default function NewTenantMaintenanceScreen() {
             </View>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>{t.tenantRequests.photosOptional}</Text>
-            <View style={styles.imageGrid}>
-              {images.map((uri, index) => (
-                <View key={index} style={styles.imageContainer}>
-                  <Image source={{ uri }} style={styles.thumbnail} />
-                  <TouchableOpacity
-                    style={styles.removeImageButton}
-                    onPress={() => removeImage(index)}
-                  >
-                    <Feather name="x" size={12} color={colors.white} />
-                  </TouchableOpacity>
-                </View>
-              ))}
-              {images.length < 5 && (
-                <TouchableOpacity
-                  style={styles.addImageButton}
-                  onPress={pickImage}
-                >
-                  <Feather name="camera" size={20} color={colors.text.secondary} />
-                  <Text style={styles.addImageLabel}>{t.tenantRequests.addPhoto}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
           <Button
             title={t.tenantRequests.submitRequest}
             onPress={handleSubmit}
@@ -430,46 +356,6 @@ const styles = StyleSheet.create({
   },
   urgencyTextEmergency: {
     color: colors.error.dark,
-  },
-  imageGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  imageContainer: {
-    position: 'relative',
-  },
-  thumbnail: {
-    width: 80,
-    height: 80,
-    borderRadius: borderRadius.md,
-  },
-  removeImageButton: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.error.main,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addImageButton: {
-    width: 80,
-    height: 80,
-    borderRadius: borderRadius.md,
-    borderWidth: 2,
-    borderColor: colors.border,
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  addImageLabel: {
-    ...typography.caption,
-    color: colors.text.secondary,
-    fontSize: 10,
   },
   submitButton: {
     marginTop: spacing.md,

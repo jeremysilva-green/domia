@@ -49,6 +49,8 @@ interface AuthState {
     planType: string;
     productId: string;
   }) => Promise<void>;
+  upgradePlan: (planType: string, productId: string) => Promise<void>;
+  deleteAccount: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -279,5 +281,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (error) throw error;
 
     await get().fetchOwnerProfile();
+  },
+
+  upgradePlan: async (planType, productId) => {
+    const owner = get().owner;
+    if (!owner) return;
+
+    const { error } = await (supabase
+      .from('owners') as any)
+      .update({ plan_type: planType, subscription_product_id: productId })
+      .eq('id', owner.id);
+
+    if (error) throw error;
+
+    await get().fetchOwnerProfile();
+  },
+
+  deleteAccount: async () => {
+    set({ isLoading: true });
+    try {
+      const session = get().session;
+      const { error } = await supabase.functions.invoke('delete-account', {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error) throw error;
+      set({ session: null, user: null, owner: null, tenantProfile: null, userRole: null });
+    } finally {
+      set({ isLoading: false });
+    }
   },
 }));

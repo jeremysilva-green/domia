@@ -11,7 +11,7 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useI18n } from '../../src/i18n';
@@ -27,6 +27,7 @@ export default function LoginScreen() {
 
   const { signIn, isLoading } = useAuthStore();
   const { t, language } = useI18n();
+  const router = useRouter();
 
   const validate = () => {
     const newErrors: { email?: string; password?: string } = {};
@@ -50,6 +51,7 @@ export default function LoginScreen() {
 
     try {
       await signIn(email.trim(), password);
+      router.replace('/');
     } catch (error: any) {
       Alert.alert(t.auth.loginFailed, error.message || 'An error occurred');
     }

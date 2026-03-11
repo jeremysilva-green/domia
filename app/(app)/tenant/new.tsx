@@ -21,21 +21,32 @@ import { prefillPhone } from '../../../src/utils/phoneCountryCode';
 
 type Currency = 'USD' | 'PYG';
 
-// Convert DD/MM/YYYY to YYYY-MM-DD for database storage
-const convertToISODate = (dateStr: string, isSpanish: boolean): string | null => {
+// Convert display format to YYYY-MM-DD for database
+// English: MM/DD/YYYY -> YYYY-MM-DD, Spanish: DD/MM/YYYY -> YYYY-MM-DD
+const formatDateForDatabase = (dateStr: string, isSpanish: boolean): string | null => {
   if (!dateStr) return null;
-  if (!isSpanish) return dateStr; // Already in YYYY-MM-DD format
-
-  // Convert DD/MM/YYYY to YYYY-MM-DD
-  const parts = dateStr.split('/');
-  if (parts.length === 3) {
-    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  const match = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (match) {
+    const [, first, second, year] = match;
+    return isSpanish ? `${year}-${second}-${first}` : `${year}-${first}-${second}`;
   }
   return dateStr;
 };
 
+// Auto-format date input with auto-advancing slashes
+const formatDateInput = (text: string): string => {
+  const cleaned = text.replace(/[^\d]/g, '');
+  let formatted = '';
+  for (let i = 0; i < cleaned.length && i < 8; i++) {
+    if (i === 2 || i === 4) formatted += '/';
+    formatted += cleaned[i];
+  }
+  return formatted;
+};
+
 export default function NewTenantScreen() {
   const { t, language } = useI18n();
+  const isSpanish = language === 'es';
   const { unitId } = useLocalSearchParams<{ unitId?: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -48,6 +59,23 @@ export default function NewTenantScreen() {
   const [currency, setCurrency] = useState<Currency>('USD');
   const [leaseStart, setLeaseStart] = useState('');
   const [leaseEnd, setLeaseEnd] = useState('');
+
+  // Pre-fill lease dates with today and +1 year
+  useEffect(() => {
+    const today = new Date();
+    const oneYearLater = new Date(today);
+    oneYearLater.setFullYear(today.getFullYear() + 1);
+
+    const fmt = (d: Date) => {
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      return isSpanish ? `${dd}/${mm}/${yyyy}` : `${mm}/${dd}/${yyyy}`;
+    };
+
+    setLeaseStart(fmt(today));
+    setLeaseEnd(fmt(oneYearLater));
+  }, [isSpanish]);
 
   // Fetch unit data to auto-populate rent amount and currency
   const { data: unit } = useQuery({
@@ -89,8 +117,6 @@ export default function NewTenantScreen() {
     mutationFn: async (): Promise<{ id: string }> => {
       if (!user?.id) throw new Error('Not authenticated');
 
-      const isSpanish = language === 'es';
-
       const { data, error } = await supabase
         .from('tenants')
         .insert({
@@ -100,8 +126,8 @@ export default function NewTenantScreen() {
           email: email.trim(),
           phone: phone.trim(),
           rent_amount: parseFloat(rentAmount),
-          lease_start: convertToISODate(leaseStart, isSpanish),
-          lease_end: convertToISODate(leaseEnd, isSpanish),
+          lease_start: formatDateForDatabase(leaseStart, isSpanish),
+          lease_end: formatDateForDatabase(leaseEnd, isSpanish),
           status: 'active',
           onboarding_completed: true,
         } as any)
@@ -157,17 +183,13 @@ export default function NewTenantScreen() {
       }
     }
 
-    // Validate date format based on language
-    const dateRegex = language === 'es'
-      ? /^\d{2}\/\d{2}\/\d{4}$/ // DD/MM/YYYY for Spanish
-      : /^\d{4}-\d{2}-\d{2}$/;  // YYYY-MM-DD for English
-
-    if (leaseStart && !dateRegex.test(leaseStart)) {
-      newErrors.leaseStart = t.tenants.dateFormatError;
+    // Both formats use ##/##/#### (MM/DD/YYYY or DD/MM/YYYY)
+    if (leaseStart && !/^\d{2}\/\d{2}\/\d{4}$/.test(leaseStart)) {
+      newErrors.leaseStart = isSpanish ? t.tenants.dateFormatError : t.tenants.dateFormatErrorUS;
     }
 
-    if (leaseEnd && !dateRegex.test(leaseEnd)) {
-      newErrors.leaseEnd = t.tenants.dateFormatError;
+    if (leaseEnd && !/^\d{2}\/\d{2}\/\d{4}$/.test(leaseEnd)) {
+      newErrors.leaseEnd = isSpanish ? t.tenants.dateFormatError : t.tenants.dateFormatErrorUS;
     }
 
     setErrors(newErrors);
@@ -177,6 +199,14 @@ export default function NewTenantScreen() {
   const handleSubmit = () => {
     if (!validate()) return;
     createTenant.mutate();
+  };
+
+  const handleLeaseStartChange = (text: string) => {
+    setLeaseStart(formatDateInput(text));
+  };
+
+  const handleLeaseEndChange = (text: string) => {
+    setLeaseEnd(formatDateInput(text));
   };
 
   const handleCancel = () => {
@@ -261,20 +291,24 @@ export default function NewTenantScreen() {
 
             <Input
               label={t.tenants.leaseStartDate}
-              placeholder={t.tenants.datePlaceholder}
+              placeholder={isSpanish ? t.tenants.datePlaceholder : t.tenants.datePlaceholderUS}
               value={leaseStart}
-              onChangeText={setLeaseStart}
+              onChangeText={handleLeaseStartChange}
               error={errors.leaseStart}
-              hint={t.tenants.leaseStartHint}
+              hint={isSpanish ? t.tenants.leaseStartHint : t.tenants.leaseStartHintUS}
+              keyboardType="number-pad"
+              maxLength={10}
             />
 
             <Input
               label={t.tenants.leaseEndDate}
-              placeholder={t.tenants.datePlaceholder}
+              placeholder={isSpanish ? t.tenants.datePlaceholder : t.tenants.datePlaceholderUS}
               value={leaseEnd}
-              onChangeText={setLeaseEnd}
+              onChangeText={handleLeaseEndChange}
               error={errors.leaseEnd}
-              hint={t.tenants.leaseEndHint}
+              hint={isSpanish ? t.tenants.leaseEndHint : t.tenants.leaseEndHintUS}
+              keyboardType="number-pad"
+              maxLength={10}
             />
           </Card>
 

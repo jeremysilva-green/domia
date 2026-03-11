@@ -31,6 +31,7 @@ export default function UnitDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   // Edit form state
   const [editUnitNumber, setEditUnitNumber] = useState('');
@@ -128,6 +129,8 @@ export default function UnitDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['unit', unitId] });
       queryClient.invalidateQueries({ queryKey: ['property', propertyId] });
       queryClient.invalidateQueries({ queryKey: ['properties'] });
+      queryClient.invalidateQueries({ queryKey: ['properties-with-units'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       setIsEditing(false);
     },
     onError: (error: any) => {
@@ -143,24 +146,13 @@ export default function UnitDetailScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['property', propertyId] });
       queryClient.invalidateQueries({ queryKey: ['properties'] });
+      queryClient.invalidateQueries({ queryKey: ['properties-with-units'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       router.back();
     },
   });
 
-  const handleDelete = () => {
-    Alert.alert(
-      t.units.deleteUnit,
-      t.units.deleteUnitConfirm,
-      [
-        { text: t.common.cancel, style: 'cancel' },
-        {
-          text: t.common.delete,
-          style: 'destructive',
-          onPress: () => deleteUnit.mutate(),
-        },
-      ]
-    );
-  };
+  const handleDelete = () => setShowDeleteModal(true);
 
   const handleSave = () => {
     if (!editUnitNumber.trim()) {
@@ -173,6 +165,25 @@ export default function UnitDetailScreen() {
     }
     updateUnit.mutate();
   };
+
+  // Real-time: refresh when a tenant is added/updated on this unit, or a connection request changes
+  useEffect(() => {
+    if (!unitId) return;
+
+    const channel = supabase
+      .channel(`unit-detail-rt-${unitId}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'tenants', filter: `unit_id=eq.${unitId}` },
+        () => { queryClient.invalidateQueries({ queryKey: ['unit', unitId] }); }
+      )
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'connection_requests', filter: `unit_id=eq.${unitId}` },
+        () => { queryClient.invalidateQueries({ queryKey: ['unit', unitId] }); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [unitId, queryClient]);
 
   const handleCancelEdit = () => {
     // Reset form to original values
@@ -454,6 +465,35 @@ export default function UnitDetailScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Delete confirmation modal */}
+      <Modal
+        visible={showDeleteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDeleteModal(false)}
+      >
+        <View style={styles.deleteOverlay}>
+          <View style={styles.deleteCard}>
+            <Text style={styles.deleteTitle}>{t.units.deleteUnit}</Text>
+            <Text style={styles.deleteBody}>{t.units.deleteUnitConfirm}</Text>
+            <View style={styles.deleteButtons}>
+              <TouchableOpacity
+                style={styles.deleteCancelBtn}
+                onPress={() => setShowDeleteModal(false)}
+              >
+                <Text style={styles.deleteCancelText}>{t.common.cancel}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteConfirmBtn}
+                onPress={() => { setShowDeleteModal(false); deleteUnit.mutate(); }}
+              >
+                <Text style={styles.deleteConfirmText}>{t.common.delete}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -701,6 +741,54 @@ const styles = StyleSheet.create({
   },
   currencyItemTextActive: {
     color: '#facc15',
+    fontWeight: '600',
+  },
+  deleteOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  deleteCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.xl,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  deleteTitle: {
+    ...typography.h3,
+    color: colors.text.primary,
+    marginBottom: spacing.sm,
+  },
+  deleteBody: {
+    ...typography.body,
+    color: colors.text.secondary,
+    marginBottom: spacing.xl,
+  },
+  deleteButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.md,
+  },
+  deleteCancelBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  deleteCancelText: {
+    ...typography.body,
+    color: colors.text.secondary,
+    fontWeight: '600',
+  },
+  deleteConfirmBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  deleteConfirmText: {
+    ...typography.body,
+    color: colors.error.main,
     fontWeight: '600',
   },
 });

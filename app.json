@@ -24,7 +24,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.domus.app",
-      "versionCode": 12,
+      "versionCode": 17,
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]

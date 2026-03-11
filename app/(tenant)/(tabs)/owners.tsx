@@ -8,13 +8,16 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../src/services/supabase';
 import { useAuthStore } from '../../../src/stores/authStore';
-import { Card, Button } from '../../../src/components/ui';
+import { Card, Button, ConfirmDialog } from '../../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
 
@@ -24,22 +27,36 @@ type PropertyItem = {
   address: string;
   city: string | null;
   owner_id: string;
-  owner: { full_name: string } | null;
+  owner: { full_name: string; profile_image_url?: string | null } | null;
 };
 
 type RequestItem = {
   id: string;
   owner_id: string;
+  property_id: string | null;
   unit_id: string | null;
   status: 'pending' | 'approved' | 'rejected';
+  unit: { property_id: string } | null;
 };
 
 export default function OwnersListScreen() {
   const { t } = useI18n();
   const { user, tenantProfile } = useAuthStore();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [dialog, setDialog] = useState<{ title: string; message: string; confirmText: string; destructive?: boolean; hideCancel?: boolean; onConfirm: () => void } | null>(null);
+  const isFocused = useIsFocused();
+
+  // Navigate to profile setup when this tab is focused and setup not yet completed.
+  // Checks user metadata (available synchronously) rather than tenantProfile.full_name,
+  // because full_name is set during sign-up and doesn't indicate profile setup is done.
+  useEffect(() => {
+    if (isFocused && user && !user.user_metadata?.profile_setup_completed) {
+      router.push('/(tenant)/profile-setup' as any);
+    }
+  }, [isFocused, user]);
 
   // Fetch all properties with owner info
   const { data: properties = [], refetch } = useQuery<PropertyItem[]>({
@@ -47,7 +64,7 @@ export default function OwnersListScreen() {
     queryFn: async (): Promise<PropertyItem[]> => {
       let query = supabase
         .from('properties')
-        .select('id, name, address, city, owner_id, owner:owners(full_name)')
+        .select('id, name, address, city, owner_id, owner:owners(full_name, profile_image_url)')
         .order('name', { ascending: true });
 
       if (searchQuery.trim()) {
@@ -70,11 +87,11 @@ export default function OwnersListScreen() {
 
       const { data, error } = await supabase
         .from('connection_requests')
-        .select('id, owner_id, unit_id, status')
+        .select('id, owner_id, property_id, unit_id, status, unit:units(property_id)')
         .eq('tenant_id', user.id);
 
       if (error) throw error;
-      return (data ?? []) as RequestItem[];
+      return (data ?? []) as unknown as RequestItem[];
     },
     enabled: !!user?.id,
     refetchInterval: 5000,
@@ -130,30 +147,27 @@ export default function OwnersListScreen() {
   });
 
   const handleDisconnect = (request: RequestItem) => {
-    Alert.alert(
-      t.tenantHome.disconnectConfirm,
-      t.tenantHome.disconnectConfirmMsg,
-      [
-        { text: t.common.cancel, style: 'cancel' },
-        {
-          text: t.tenantHome.disconnectConfirm,
-          style: 'destructive',
-          onPress: () => disconnectMutation.mutate({ id: request.id, unit_id: request.unit_id }),
-        },
-      ]
-    );
+    setDialog({
+      title: t.tenantHome.disconnectConfirm,
+      message: t.tenantHome.disconnectConfirmMsg,
+      confirmText: t.tenantHome.disconnectConfirm,
+      destructive: true,
+      onConfirm: () => disconnectMutation.mutate({ id: request.id, unit_id: request.unit_id }),
+    });
   };
 
   // Send connection request
   const sendRequest = useMutation({
-    mutationFn: async (ownerId: string) => {
+    mutationFn: async ({ ownerId, propertyId }: { ownerId: string; propertyId: string }) => {
       if (!user?.id) throw new Error('Not authenticated');
 
       const tenantName = tenantProfile?.full_name || user.user_metadata?.full_name || 'Unknown';
       const tenantEmail = tenantProfile?.email || user.email || '';
       const tenantPhone = tenantProfile?.phone || user.user_metadata?.phone || null;
+      const tenantRuc = tenantProfile?.ruc || user.user_metadata?.ruc || null;
+      const tenantRazonSocial = tenantProfile?.razon_social || user.user_metadata?.razon_social || null;
 
-      // Delete any previously rejected request so a new one can be inserted
+      // Delete any previously rejected request for this specific property
       await supabase
         .from('connection_requests')
         .delete()
@@ -161,14 +175,17 @@ export default function OwnersListScreen() {
         .eq('owner_id', ownerId)
         .eq('status', 'rejected');
 
-      const { error } = await supabase
-        .from('connection_requests')
+      const { error } = await (supabase
+        .from('connection_requests') as any)
         .insert({
           tenant_id: user.id,
           owner_id: ownerId,
+          property_id: propertyId,
           tenant_name: tenantName,
           tenant_email: tenantEmail,
           tenant_phone: tenantPhone,
+          tenant_ruc: tenantRuc,
+          tenant_razon_social: tenantRazonSocial,
           status: 'pending',
         });
 
@@ -177,7 +194,12 @@ export default function OwnersListScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-connection-requests'] });
       queryClient.invalidateQueries({ queryKey: ['tenant-connection'] });
-      Alert.alert(t.owners.requestSent, t.owners.requestSentMsg);
+      setDialog({
+        title: t.owners.requestSent,
+        message: t.owners.requestSentMsg,
+        confirmText: 'OK',
+        onConfirm: () => setDialog(null),
+      });
     },
     onError: (error: any) => {
       if (error.message?.includes('duplicate')) {
@@ -220,41 +242,42 @@ export default function OwnersListScreen() {
     };
   }, [user?.id, queryClient]);
 
-  const getRequest = (ownerId: string) =>
-    existingRequests.find((r) => r.owner_id === ownerId);
+  const getRequest = (property: PropertyItem) =>
+    existingRequests.find((r) => {
+      // New records: match directly by property_id
+      if (r.property_id) return r.property_id === property.id;
+      // Fallback for old records: approved requests linked via unit
+      if (r.status === 'approved' && r.unit?.property_id) return r.unit.property_id === property.id;
+      // Legacy fallback: match by owner (old requests without property_id)
+      return r.owner_id === property.owner_id;
+    });
 
   const handleSendRequest = (property: PropertyItem) => {
-    Alert.alert(
-      t.owners.sendRequest,
-      `${t.owners.sendRequestConfirm} ${property.name}?`,
-      [
-        { text: t.common.cancel, style: 'cancel' },
-        {
-          text: t.owners.sendRequest,
-          onPress: () => sendRequest.mutate(property.owner_id),
-        },
-      ]
-    );
+    setDialog({
+      title: t.owners.sendRequest,
+      message: `${t.owners.sendRequestConfirm} ${property.name}?`,
+      confirmText: t.owners.sendRequest,
+      onConfirm: () => sendRequest.mutate({ ownerId: property.owner_id, propertyId: property.id }),
+    });
   };
 
   const renderPropertyItem = ({ item }: { item: PropertyItem }) => {
-    const request = getRequest(item.owner_id);
+    const request = getRequest(item);
     const status = request?.status;
 
     return (
       <Card style={styles.propertyCard}>
         <View style={styles.propertyInfo}>
-          <View style={styles.propertyIcon}>
-            <Feather name="home" size={22} color={colors.yellow} />
-          </View>
+          {item.owner?.profile_image_url ? (
+            <Image source={{ uri: item.owner.profile_image_url }} style={styles.ownerAvatar} />
+          ) : (
+            <View style={styles.propertyIcon}>
+              <Feather name="home" size={22} color={colors.yellow} />
+            </View>
+          )}
           <View style={styles.propertyDetails}>
             <Text style={styles.propertyName}>{item.name}</Text>
             <Text style={styles.propertyAddress} numberOfLines={1}>{item.address}</Text>
-            {item.owner?.full_name ? (
-              <Text style={styles.ownerName} numberOfLines={1}>
-                {item.owner.full_name}
-              </Text>
-            ) : null}
           </View>
         </View>
 
@@ -338,6 +361,18 @@ export default function OwnersListScreen() {
           </View>
         }
       />
+      <ConfirmDialog
+        visible={!!dialog}
+        title={dialog?.title || ''}
+        message={dialog?.message}
+        confirmText={dialog?.confirmText}
+        cancelText={t.common.cancel}
+        destructive={dialog?.destructive}
+        hideCancel={dialog?.hideCancel}
+        onConfirm={() => { dialog?.onConfirm(); setDialog(null); }}
+        onCancel={() => setDialog(null)}
+      />
+
     </SafeAreaView>
   );
 }
@@ -405,6 +440,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(250, 204, 21, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
+  },
+  ownerAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     flexShrink: 0,
   },
   propertyDetails: {

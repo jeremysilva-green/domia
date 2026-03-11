@@ -111,9 +111,6 @@ export default function RegisterScreen() {
 
           <View style={styles.form}>
             <Text style={styles.title}>{t.auth.createAccount}</Text>
-            <Text style={styles.subtitle}>
-              {t.auth.joinSubtitle}
-            </Text>
 
             {!preselectedRole && (
               <View style={styles.roleSection}>

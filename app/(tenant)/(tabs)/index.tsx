@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Alert, Image, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Alert, Image, TouchableOpacity, Modal, Linking } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState, useMemo, useEffect } from 'react';
@@ -6,7 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { supabase } from '../../../src/services/supabase';
-import { Card, Button } from '../../../src/components/ui';
+import { Card, Button, ConfirmDialog } from '../../../src/components/ui';
 import { colors, spacing, typography } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
 
@@ -17,6 +18,7 @@ export default function TenantHomeScreen() {
   const { tenantProfile, user } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
   const [leaseModalVisible, setLeaseModalVisible] = useState(false);
+  const [dialog, setDialog] = useState<{ title: string; message: string; confirmText: string; destructive?: boolean; onConfirm: () => void } | null>(null);
 
   // Get connection request status
   const { data: connectionRequest, refetch } = useQuery({
@@ -28,7 +30,7 @@ export default function TenantHomeScreen() {
         .from('connection_requests')
         .select(`
           *,
-          owner:owners(full_name, email, bank_full_name, bank_name, bank_account_number, bank_ruc, bank_alias),
+          owner:owners(full_name, email, phone, bank_full_name, bank_name, bank_account_number, bank_ruc, bank_alias, profile_image_url),
           unit:units(unit_number, property:properties(name, address, image_url))
         `)
         .eq('tenant_id', user.id)
@@ -204,19 +206,21 @@ export default function TenantHomeScreen() {
     },
   });
 
+  const handleWhatsApp = () => {
+    const phone = (connectionRequest?.owner as any)?.phone;
+    if (!phone) return;
+    const digits = phone.replace(/[^0-9]/g, '');
+    Linking.openURL(`https://wa.me/${digits}`);
+  };
+
   const handleDisconnect = () => {
-    Alert.alert(
-      t.tenantHome.disconnectConfirm,
-      t.tenantHome.disconnectConfirmMsg,
-      [
-        { text: t.common.cancel, style: 'cancel' },
-        {
-          text: t.tenantHome.disconnectConfirm,
-          style: 'destructive',
-          onPress: () => disconnectMutation.mutate(),
-        },
-      ]
-    );
+    setDialog({
+      title: t.tenantHome.disconnectConfirm,
+      message: t.tenantHome.disconnectConfirmMsg,
+      confirmText: t.tenantHome.disconnectConfirm,
+      destructive: true,
+      onConfirm: () => disconnectMutation.mutate(),
+    });
   };
 
   const isConnected = connectionRequest?.status === 'approved';
@@ -296,9 +300,32 @@ export default function TenantHomeScreen() {
                   )}
                   <View style={styles.ownerInfo}>
                     <Text style={styles.ownerLabel}>{t.tenantHome.propertyManager}</Text>
-                    <Text style={styles.ownerName}>
-                      {connectionRequest?.owner?.full_name}
-                    </Text>
+                    <View style={styles.ownerNameRow}>
+                      {(connectionRequest?.owner as any)?.profile_image_url ? (
+                        <Image source={{ uri: (connectionRequest?.owner as any).profile_image_url }} style={styles.ownerAvatar} />
+                      ) : (
+                        <View style={styles.ownerAvatarFallback}>
+                          <Text style={styles.ownerAvatarInitials}>
+                            {connectionRequest?.owner?.full_name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'O'}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={styles.ownerNameAlias}>
+                        <Text style={styles.ownerName}>
+                          {connectionRequest?.owner?.full_name}
+                        </Text>
+                        {(connectionRequest?.owner as any)?.bank_alias ? (
+                          <Text style={styles.ownerAlias}>
+                            {' · Alias: '}{(connectionRequest?.owner as any).bank_alias}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {(connectionRequest?.owner as any)?.phone ? (
+                        <TouchableOpacity style={styles.whatsappButton} onPress={handleWhatsApp}>
+                          <Feather name="message-circle" size={20} color="#ffffff" />
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
                   </View>
                 </View>
               </View>
@@ -387,7 +414,12 @@ export default function TenantHomeScreen() {
                     if (leaseImageUrl) {
                       setLeaseModalVisible(true);
                     } else {
-                      Alert.alert(t.tenantHome.viewLease, t.tenantHome.noLeaseAvailable);
+                      setDialog({
+                        title: t.tenantHome.viewLease,
+                        message: t.tenantHome.noLeaseAvailable,
+                        confirmText: 'OK',
+                        onConfirm: () => setDialog(null),
+                      });
                     }
                   }}
                 >
@@ -459,6 +491,16 @@ export default function TenantHomeScreen() {
           )}
         </View>
       </Modal>
+      <ConfirmDialog
+        visible={!!dialog}
+        title={dialog?.title || ''}
+        message={dialog?.message}
+        confirmText={dialog?.confirmText}
+        cancelText={t.common.cancel}
+        destructive={dialog?.destructive}
+        onConfirm={() => { dialog?.onConfirm(); setDialog(null); }}
+        onCancel={() => setDialog(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -594,11 +636,26 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: 'rgba(255,255,255,0.6)',
   },
+  ownerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
+  ownerNameAlias: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
   ownerName: {
     ...typography.body,
     fontWeight: '600',
     color: colors.white,
-    marginTop: 2,
+  },
+  ownerAlias: {
+    ...typography.body,
+    color: 'rgba(255,255,255,0.7)',
   },
   scoreCard: {
     marginBottom: spacing.lg,
@@ -753,6 +810,30 @@ const styles = StyleSheet.create({
   },
   welcomeButton: {
     marginTop: spacing.sm,
+  },
+  ownerAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: spacing.sm,
+  },
+  ownerAvatarFallback: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#facc15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  ownerAvatarInitials: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#000',
+  },
+  whatsappButton: {
+    marginLeft: spacing.sm,
+    padding: 2,
   },
   disconnectButton: {
     marginTop: spacing.xl,

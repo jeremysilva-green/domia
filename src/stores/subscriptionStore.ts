@@ -1,0 +1,155 @@
+/**
+ * Subscription store using react-native-iap for Google Play Billing.
+ *
+ * IMPORTANT: react-native-iap requires a native build.
+ * Run: npx expo install react-native-iap
+ * Then create a new EAS development build before testing billing on device.
+ *
+ * Replace the PRODUCT_IDS below with your actual Google Play Console product IDs.
+ */
+import { create } from 'zustand';
+import { Alert } from 'react-native';
+import { supabase } from '../services/supabase';
+
+// ─── Product IDs — replace with your Google Play Console subscription IDs ────
+export const PLAN_PRODUCT_IDS = {
+  '1-10':  'domus_10_monthly',   // $10/month — up to 10 units
+  '10-30': 'domus_25_monthly',   // $25/month — up to 30 units
+  '30-50': 'domus_45_monthly',   // $45/month — Unlimited
+} as const;
+
+export type PlanType = keyof typeof PLAN_PRODUCT_IDS;
+
+export const PLAN_LIMITS: Record<PlanType, number> = {
+  '1-10':  10,
+  '10-30': 30,
+  '30-50': Infinity,
+};
+
+export const PLAN_NAMES: Record<PlanType, string> = {
+  '1-10':  'Starter',
+  '10-30': 'Pro',
+  '30-50': 'Unlimited',
+};
+
+export const PLAN_PRICES: Record<PlanType, string> = {
+  '1-10':  '$10/month',
+  '10-30': '$25/month',
+  '30-50': '$45/month',
+};
+
+interface SubscriptionState {
+  isConnected: boolean;
+  isPurchasing: boolean;
+
+  initConnection: () => Promise<void>;
+  purchasePlan: (
+    planType: PlanType,
+    onSuccess: () => void,
+    onError: (msg: string) => void
+  ) => Promise<void>;
+  endConnection: () => void;
+}
+
+// Lazy-load react-native-iap so the UI doesn't crash if native module isn't built yet
+async function getRNIap() {
+  try {
+    const mod = await import('react-native-iap');
+    return mod;
+  } catch {
+    return null;
+  }
+}
+
+export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
+  isConnected: false,
+  isPurchasing: false,
+
+  initConnection: async () => {
+    const RNIap = await getRNIap();
+    if (!RNIap) return; // native module not available yet
+    try {
+      await RNIap.initConnection();
+      set({ isConnected: true });
+    } catch (e: any) {
+      console.warn('IAP initConnection failed:', e?.message);
+    }
+  },
+
+  purchasePlan: async (planType, onSuccess, onError) => {
+    const RNIap = await getRNIap();
+    if (!RNIap) {
+      // Native module not available — show placeholder in dev
+      Alert.alert(
+        'Billing unavailable',
+        'Google Play Billing requires a native build. Run: npx expo install react-native-iap, then build with EAS.',
+      );
+      return;
+    }
+
+    if (!get().isConnected) {
+      await get().initConnection();
+    }
+
+    set({ isPurchasing: true });
+    try {
+      const sku = PLAN_PRODUCT_IDS[planType];
+      await RNIap.requestSubscription({ sku });
+
+      // Listen for purchase confirmation
+      const purchaseListener = RNIap.purchaseUpdatedListener(async (purchase) => {
+        if (purchase.productId === sku) {
+          try {
+            await RNIap.finishTransaction({ purchase, isConsumable: false });
+          } catch {}
+
+          // Send purchase token to backend for verification
+          const purchaseToken = purchase.purchaseToken;
+          if (purchaseToken) {
+            try {
+              const session = (await supabase.auth.getSession()).data.session;
+              const { error: verifyError } = await supabase.functions.invoke('verify-purchase', {
+                body: { purchaseToken, productId: sku },
+                headers: { Authorization: `Bearer ${session?.access_token}` },
+              });
+              if (verifyError) {
+                purchaseListener.remove();
+                set({ isPurchasing: false });
+                onError('Purchase verification failed. Please contact support.');
+                return;
+              }
+            } catch (verifyErr: any) {
+              console.warn('Purchase verification error:', verifyErr?.message);
+              // Non-blocking: allow success even if verification fails (handled server-side)
+            }
+          }
+
+          purchaseListener.remove();
+          set({ isPurchasing: false });
+          onSuccess();
+        }
+      });
+
+      const errorListener = RNIap.purchaseErrorListener((error) => {
+        if (error.productId === sku) {
+          errorListener.remove();
+          set({ isPurchasing: false });
+          onError(error.message || 'Purchase failed');
+        }
+      });
+    } catch (e: any) {
+      set({ isPurchasing: false });
+      onError(e?.message || 'Purchase failed');
+    }
+  },
+
+  endConnection: async () => {
+    const RNIap = await getRNIap();
+    if (RNIap) {
+      try {
+        await RNIap.endConnection();
+      } catch {}
+    }
+    set({ isConnected: false });
+  },
+}));

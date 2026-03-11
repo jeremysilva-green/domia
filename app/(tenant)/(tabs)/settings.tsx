@@ -33,7 +33,7 @@ const COUNTRY_PHONE_EXAMPLES: Record<string, string> = {
 
 function getPhonePlaceholder(): string {
   const region = Localization.getLocales()[0]?.regionCode ?? '';
-  return COUNTRY_PHONE_EXAMPLES[region] ?? '+1 (555) 123-4567';
+  return COUNTRY_PHONE_EXAMPLES[region] ?? '+595 981 123 456';
 }
 import { useAuthStore } from '../../../src/stores/authStore';
 import { useI18n, Language } from '../../../src/i18n';
@@ -48,6 +48,7 @@ export default function TenantSettingsScreen() {
   const [fullName, setFullName] = useState(tenantProfile?.full_name || '');
   const [phone, setPhone] = useState(tenantProfile?.phone || '');
   const [ruc, setRuc] = useState((tenantProfile as any)?.ruc || '');
+  const [razonSocial, setRazonSocial] = useState((tenantProfile as any)?.razon_social || '');
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
@@ -122,6 +123,7 @@ export default function TenantSettingsScreen() {
         full_name: fullName.trim(),
         phone: phone.trim() || null,
         ruc: ruc.trim() || null,
+        razon_social: razonSocial.trim() || null,
       } as any);
 
       // Sync to tenants table so the owner sees updated info immediately
@@ -131,6 +133,7 @@ export default function TenantSettingsScreen() {
           full_name: fullName.trim() || null,
           phone: phone.trim() || null,
           ruc: ruc.trim() || null,
+          razon_social: razonSocial.trim() || null,
         } as any)
         .eq('id', user!.id);
 
@@ -205,6 +208,13 @@ export default function TenantSettingsScreen() {
                   placeholder="0000000000001"
                 />
                 <Input
+                  label="Razón Social"
+                  value={razonSocial}
+                  onChangeText={setRazonSocial}
+                  autoCapitalize="words"
+                  placeholder="Mi Empresa S.A."
+                />
+                <Input
                   label={t.settings.phone}
                   value={phone}
                   onChangeText={setPhone}
@@ -220,6 +230,7 @@ export default function TenantSettingsScreen() {
                       setFullName(tenantProfile?.full_name || '');
                       setPhone(tenantProfile?.phone || '');
                       setRuc((tenantProfile as any)?.ruc || '');
+                      setRazonSocial((tenantProfile as any)?.razon_social || '');
                     }}
                     style={styles.editButton}
                   />
@@ -244,6 +255,13 @@ export default function TenantSettingsScreen() {
                   <Text style={styles.profileLabel}>RUC</Text>
                   <Text style={styles.profileValue}>
                     {(tenantProfile as any)?.ruc || t.common.notSet}
+                  </Text>
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.profileRow}>
+                  <Text style={styles.profileLabel}>Razón Social</Text>
+                  <Text style={styles.profileValue}>
+                    {(tenantProfile as any)?.razon_social || t.common.notSet}
                   </Text>
                 </View>
                 <View style={styles.divider} />

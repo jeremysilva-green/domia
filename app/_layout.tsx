@@ -1,12 +1,13 @@
 // Force rebundle: 2026-02-04T21:30:00
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../src/stores/authStore';
 import { colors } from '../src/constants/theme';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, AppState, AppStateStatus } from 'react-native';
+import { supabase } from '../src/services/supabase';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,10 +29,28 @@ function LoadingScreen() {
 function RootLayoutNav() {
   const initialize = useAuthStore((state) => state.initialize);
   const isInitialized = useAuthStore((state) => state.isInitialized);
+  const appState = useRef<AppStateStatus>(AppState.currentState);
 
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  // Refresh Supabase auth session when app comes back to the foreground.
+  // Without this, the access token expires after ~1 hour in the background
+  // and all API calls hang indefinitely, leaving spinners stuck.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (appState.current.match(/inactive|background/) && nextState === 'active') {
+        supabase.auth.startAutoRefresh();
+        queryClient.invalidateQueries();
+      } else if (nextState.match(/inactive|background/)) {
+        supabase.auth.stopAutoRefresh();
+      }
+      appState.current = nextState;
+    });
+
+    return () => subscription.remove();
+  }, []);
 
   if (!isInitialized) {
     return <LoadingScreen />;
@@ -44,6 +63,7 @@ function RootLayoutNav() {
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(app)" />
+        <Stack.Screen name="(onboarding)" />
         <Stack.Screen name="(tenant)" />
         <Stack.Screen name="(public)" />
       </Stack>

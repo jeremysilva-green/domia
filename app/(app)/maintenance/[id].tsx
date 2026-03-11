@@ -72,7 +72,7 @@ export default function MaintenanceDetailScreen() {
     mutationFn: async () => {
       const { error } = await supabase
         .from('maintenance_requests')
-        .update({ status: 'in_progress' } as any)
+        .update({ status: 'in_progress', seen_by_tenant: false } as any)
         .eq('id', id);
       if (error) throw error;
     },
@@ -89,7 +89,7 @@ export default function MaintenanceDetailScreen() {
     mutationFn: async () => {
       const { error } = await supabase
         .from('maintenance_requests')
-        .update({ status: 'completed', completed_at: new Date().toISOString() } as any)
+        .update({ status: 'completed', completed_at: new Date().toISOString(), seen_by_tenant: false } as any)
         .eq('id', id);
       if (error) throw error;
     },

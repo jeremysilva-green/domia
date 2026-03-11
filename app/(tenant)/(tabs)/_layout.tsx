@@ -1,6 +1,8 @@
-import { Tabs } from 'expo-router';
+import { useState, useEffect, useRef } from 'react';
+import { Tabs, usePathname } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useI18n } from '../../../src/i18n';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { supabase } from '../../../src/services/supabase';
@@ -9,21 +11,61 @@ import { colors } from '../../../src/constants/theme';
 export default function TenantTabsLayout() {
   const { t } = useI18n();
   const { user } = useAuthStore();
+  const pathname = usePathname();
+  const insets = useSafeAreaInsets();
 
-  const { data: openRequestsCount } = useQuery({
-    queryKey: ['tenant-open-requests-count', user?.id],
+  const { data: inboxCount } = useQuery({
+    queryKey: ['tenant-inbox-count', user?.id],
     queryFn: async () => {
       if (!user?.id) return 0;
-      const { count } = await supabase
-        .from('maintenance_requests')
-        .select('*', { count: 'exact', head: true })
-        .eq('tenant_id', user.id)
-        .in('status', ['submitted', 'in_progress']);
-      return count || 0;
+
+      const [{ count: maintenanceCount }, { count: connectionCount }, { data: tenantRecord }] = await Promise.all([
+        supabase
+          .from('maintenance_requests')
+          .select('*', { count: 'exact', head: true })
+          .eq('tenant_id', user.id)
+          .eq('seen_by_tenant', false),
+        supabase
+          .from('connection_requests')
+          .select('*', { count: 'exact', head: true })
+          .eq('tenant_id', user.id)
+          .eq('seen_by_tenant', false),
+        supabase
+          .from('tenants')
+          .select('lease_seen_by_tenant')
+          .eq('id', user.id)
+          .single(),
+      ]);
+
+      const leaseUnseen = (tenantRecord as any)?.lease_seen_by_tenant === false ? 1 : 0;
+      return (maintenanceCount || 0) + (connectionCount || 0) + leaseUnseen;
     },
     enabled: !!user?.id,
     refetchInterval: 30000,
   });
+
+  // Badge is only active when count genuinely increases (new notification),
+  // and is deactivated when the inbox is visited or count drops to 0.
+  const [badgeActive, setBadgeActive] = useState(false);
+  const prevCount = useRef(0);
+
+  useEffect(() => {
+    const curr = inboxCount ?? 0;
+    const onInbox = pathname.endsWith('/inbox');
+
+    if (onInbox || curr === 0) {
+      setBadgeActive(false);
+      prevCount.current = curr;
+      return;
+    }
+
+    // Show badge only when count increases (new notification arrived)
+    if (curr > prevCount.current) {
+      setBadgeActive(true);
+    }
+
+    prevCount.current = curr;
+  }, [inboxCount, pathname]);
 
   return (
     <Tabs
@@ -33,9 +75,9 @@ export default function TenantTabsLayout() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 85,
+          height: 60 + insets.bottom,
           paddingTop: 8,
-          paddingBottom: 28,
+          paddingBottom: insets.bottom > 0 ? insets.bottom : 12,
         },
         tabBarActiveTintColor: colors.yellow,
         tabBarInactiveTintColor: colors.text.secondary,
@@ -49,8 +91,8 @@ export default function TenantTabsLayout() {
         name="index"
         options={{
           title: t.nav.home,
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="home" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <Feather name="home" size={35} color={color} />
           ),
         }}
       />
@@ -58,8 +100,8 @@ export default function TenantTabsLayout() {
         name="owners"
         options={{
           title: t.nav.owners,
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="users" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <Feather name="users" size={35} color={color} />
           ),
         }}
       />
@@ -67,10 +109,19 @@ export default function TenantTabsLayout() {
         name="requests"
         options={{
           title: t.nav.requests,
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="tool" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <Feather name="tool" size={35} color={color} />
           ),
-          tabBarBadge: openRequestsCount ? openRequestsCount : undefined,
+        }}
+      />
+      <Tabs.Screen
+        name="inbox"
+        options={{
+          title: t.nav.inbox,
+          tabBarIcon: ({ color }) => (
+            <Feather name="bell" size={35} color={color} />
+          ),
+          tabBarBadge: (inboxCount && badgeActive) ? inboxCount : undefined,
           tabBarBadgeStyle: { backgroundColor: colors.error.main, fontSize: 10 },
         }}
       />
@@ -78,8 +129,8 @@ export default function TenantTabsLayout() {
         name="settings"
         options={{
           title: t.nav.settings,
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="settings" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <Feather name="settings" size={35} color={color} />
           ),
         }}
       />

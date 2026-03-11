@@ -1,6 +1,6 @@
 // Force rebundle: 2026-02-04T21:30:00 - All yellow colors are now #facc15
 import { useRef, useCallback, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList, RefreshControl, Image, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList, RefreshControl, Image, Modal, Alert, ActivityIndicator, Linking } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import PagerView from 'react-native-pager-view';
@@ -12,7 +12,7 @@ import { useAuthStore } from '../../../src/stores/authStore';
 import { supabase } from '../../../src/services/supabase';
 import { colors, spacing, typography, borderRadius } from '../../../src/constants/theme';
 import { StatCard } from '../../../src/components/dashboard';
-import { Card, Button, Badge, Input } from '../../../src/components/ui';
+import { Card, Button, Badge, Input, ConfirmDialog } from '../../../src/components/ui';
 import { StatusBadge } from '../../../src/components/shared';
 import {
   DashboardStats,
@@ -27,6 +27,9 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CURRENCIES, Currency, getCurrencySymbol, getCurrencyLabel, formatMonthlyRent } from '../../../src/utils/currency';
 import { prefillPhone } from '../../../src/utils/phoneCountryCode';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
 
 // ============================================
 // TAB CONFIGURATION
@@ -150,10 +153,10 @@ function DashboardContent({ displayCurrency }: { displayCurrency: Currency }) {
               'property_id',
               (await supabase.from('properties').select('id').eq('owner_id', owner.id)).data?.map((p) => p.id) || []
             ),
-          supabase.from('tenants').select('id, rent_amount').eq('owner_id', owner.id).eq('status', 'active'),
+          supabase.from('tenants').select('id, rent_amount, unit_id').eq('owner_id', owner.id).eq('status', 'active'),
           supabase
             .from('rent_payments')
-            .select('amount_due, amount_paid, status')
+            .select('amount_due, amount_paid, status, tenant_id')
             .eq('period_month', currentMonth)
             .eq('period_year', currentYear)
             .in(
@@ -176,6 +179,14 @@ function DashboardContent({ displayCurrency }: { displayCurrency: Currency }) {
       const payments = paymentsRes.data || [];
       const maintenance = maintenanceRes.data || [];
 
+      // Build lookup maps for currency conversion on payments
+      const tenantUnitMap: Record<string, string> = Object.fromEntries(
+        tenants.map((t: any) => [t.id, t.unit_id])
+      );
+      const unitCurrencyMap: Record<string, string> = Object.fromEntries(
+        units.map((u) => [u.id, (u as any).currency || 'USD'])
+      );
+
       return {
         totalRentExpected: units
           .filter((u) => u.status === 'occupied')
@@ -184,7 +195,11 @@ function DashboardContent({ displayCurrency }: { displayCurrency: Currency }) {
             const rentAmount = u.rent_amount || 0;
             return sum + convertToDisplayCurrency(rentAmount, unitCurrency, displayCurrency, exchangeRates);
           }, 0),
-        totalRentCollected: payments.reduce((sum, p) => sum + (p.amount_paid || 0), 0),
+        totalRentCollected: payments.reduce((sum, p: any) => {
+          const unitId = tenantUnitMap[p.tenant_id];
+          const currency = unitCurrencyMap[unitId] || 'USD';
+          return sum + convertToDisplayCurrency(p.amount_paid || 0, currency, displayCurrency, exchangeRates);
+        }, 0),
         latePaymentsCount: payments.filter((p) => p.status === 'late').length,
         activeMaintenanceCount: maintenance.length,
         propertiesCount: properties.length,
@@ -255,7 +270,18 @@ function DashboardContent({ displayCurrency }: { displayCurrency: Currency }) {
             style={contentStyles.logo}
             resizeMode="contain"
           />
-          <Text style={contentStyles.ownerName}>{owner?.full_name || 'Owner'}</Text>
+          <View style={contentStyles.headerAvatarRow}>
+            <Text style={contentStyles.ownerName}>{owner?.full_name || 'Owner'}</Text>
+            {owner?.profile_image_url ? (
+              <Image source={{ uri: owner.profile_image_url }} style={contentStyles.headerAvatar} />
+            ) : (
+              <View style={contentStyles.headerAvatarFallback}>
+                <Text style={contentStyles.headerAvatarInitials}>
+                  {owner?.full_name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'O'}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
 
         <View style={contentStyles.statsRow}>
@@ -385,7 +411,6 @@ function PropertiesContent() {
   const { user } = useAuthStore();
   const { t } = useI18n();
   const [refreshing, setRefreshing] = useState(false);
-
   const { data: properties, isLoading, refetch } = useQuery<PropertyWithUnits[]>({
     queryKey: ['properties', user?.id],
     queryFn: async () => {
@@ -587,6 +612,9 @@ function NotificationsContent() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<ConnectionRequestWithDetails | null>(null);
   const [showUnitModal, setShowUnitModal] = useState(false);
+  const [rejectDialog, setRejectDialog] = useState<{ request: ConnectionRequestWithDetails } | null>(null);
+  const [infoDialog, setInfoDialog] = useState<{ title: string; message: string } | null>(null);
+  const [showClearAllDialog, setShowClearAllDialog] = useState(false);
 
   const { data: requests, isLoading, refetch } = useQuery<ConnectionRequestWithDetails[]>({
     queryKey: ['connection-requests', owner?.id],
@@ -621,39 +649,61 @@ function NotificationsContent() {
   });
 
   const approveRequest = useMutation({
-    mutationFn: async ({ requestId, unitId }: { requestId: string; unitId: string }) => {
+    mutationFn: async ({ requestId, unitId, propertyId }: { requestId: string; unitId?: string; propertyId?: string }) => {
+      let resolvedUnitId = unitId;
+
+      // For house-type properties, find or create a unit representing the house (atomic upsert)
+      if (!unitId && propertyId) {
+        const { data: houseUnit, error: houseUnitError } = await (supabase.from('units') as any)
+          .upsert(
+            { property_id: propertyId, unit_number: 'Casa', status: 'vacant', rent_amount: 0 },
+            { onConflict: 'property_id,unit_number' }
+          )
+          .select('id')
+          .single();
+        if (houseUnitError) throw houseUnitError;
+        resolvedUnitId = houseUnit.id;
+      }
+
+      if (!resolvedUnitId) throw new Error('No unit selected');
+
       const { error: requestError } = await supabase
         .from('connection_requests')
-        .update({ status: 'approved', unit_id: unitId, updated_at: new Date().toISOString() })
+        .update({ status: 'approved', unit_id: resolvedUnitId, updated_at: new Date().toISOString(), seen_by_tenant: false } as any)
         .eq('id', requestId);
       if (requestError) throw requestError;
 
       const { data: request } = await supabase.from('connection_requests').select('*').eq('id', requestId).single();
       if (!request) throw new Error('Request not found');
 
-      const { data: unit } = await supabase.from('units').select('rent_amount').eq('id', unitId).single();
+      const { data: unit } = await supabase.from('units').select('rent_amount').eq('id', resolvedUnitId).single();
 
-      const { error: tenantError } = await supabase.from('tenants').insert({
+      const { error: tenantError } = await (supabase.from('tenants') as any).insert({
         id: request.tenant_id,
-        unit_id: unitId,
+        unit_id: resolvedUnitId,
         owner_id: owner!.id,
         full_name: request.tenant_name,
         email: request.tenant_email,
         phone: request.tenant_phone,
+        ruc: (request as any).tenant_ruc || null,
+        razon_social: (request as any).tenant_razon_social || null,
         rent_amount: unit?.rent_amount || 0,
         status: 'active',
         onboarding_completed: true,
       });
       if (tenantError && !tenantError.message.includes('duplicate')) throw tenantError;
 
-      const { error: unitError } = await supabase.from('units').update({ status: 'occupied' }).eq('id', unitId);
+      const { error: unitError } = await supabase.from('units').update({ status: 'occupied' }).eq('id', resolvedUnitId);
       if (unitError) throw unitError;
     },
     onSuccess: () => {
       const tenantId = selectedRequest?.tenant_id;
       queryClient.invalidateQueries({ queryKey: ['connection-requests'] });
       queryClient.invalidateQueries({ queryKey: ['properties'] });
+      queryClient.invalidateQueries({ queryKey: ['properties-with-units'] });
       queryClient.invalidateQueries({ queryKey: ['tenants'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-connections-count'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       setShowUnitModal(false);
       setSelectedRequest(null);
 
@@ -671,15 +721,34 @@ function NotificationsContent() {
     mutationFn: async (requestId: string) => {
       const { error } = await supabase
         .from('connection_requests')
-        .update({ status: 'rejected', updated_at: new Date().toISOString() })
+        .update({ status: 'rejected', updated_at: new Date().toISOString(), seen_by_tenant: false } as any)
         .eq('id', requestId);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['connection-requests'] });
-      Alert.alert(t.common.done, t.notifications.declineSuccess);
+      queryClient.invalidateQueries({ queryKey: ['pending-connections-count'] });
+      setInfoDialog({ title: t.common.done, message: t.notifications.declineSuccess });
     },
     onError: (error: any) => Alert.alert(t.common.error, error.message || 'Failed to decline request'),
+  });
+
+  const clearAll = useMutation({
+    mutationFn: async () => {
+      if (!owner?.id) return;
+      const { error } = await supabase
+        .from('connection_requests')
+        .delete()
+        .eq('owner_id', owner.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['connection-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-connections-count'] });
+      setShowClearAllDialog(false);
+      setInfoDialog({ title: t.common.done, message: t.notifications.clearAllSuccess });
+    },
+    onError: (error: any) => Alert.alert(t.common.error, error.message || 'Failed to clear notifications'),
   });
 
   const handleApprove = (request: ConnectionRequestWithDetails) => {
@@ -688,14 +757,16 @@ function NotificationsContent() {
   };
 
   const handleReject = (request: ConnectionRequestWithDetails) => {
-    Alert.alert(t.notifications.declineConfirm, `${t.notifications.declineConfirmMsg} ${request.tenant_name}?`, [
-      { text: t.common.cancel, style: 'cancel' },
-      { text: t.notifications.decline, style: 'destructive', onPress: () => rejectRequest.mutate(request.id) },
-    ]);
+    setRejectDialog({ request });
   };
 
-  const handleSelectUnit = (unitId: string) => {
-    if (selectedRequest) approveRequest.mutate({ requestId: selectedRequest.id, unitId });
+  const handleSelectUnit = (item: { id: string; isHouseProperty?: boolean; propertyId?: string }) => {
+    if (!selectedRequest) return;
+    if (item.isHouseProperty && item.propertyId) {
+      approveRequest.mutate({ requestId: selectedRequest.id, propertyId: item.propertyId });
+    } else {
+      approveRequest.mutate({ requestId: selectedRequest.id, unitId: item.id });
+    }
   };
 
   const onRefresh = async () => {
@@ -709,7 +780,16 @@ function NotificationsContent() {
 
   const pendingRequests = requests?.filter((r) => r.status === 'pending') || [];
   const processedRequests = requests?.filter((r) => r.status !== 'pending') || [];
-  const vacantUnits = properties?.flatMap((p) => p.units.filter((u) => u.status === 'vacant').map((u) => ({ ...u, propertyName: p.name }))) || [];
+  const vacantUnits = properties?.flatMap((p): any[] => {
+    if ((p as any).property_type === 'house') {
+      const isOccupied = p.units.some((u: Unit) => u.status === 'occupied');
+      if (!isOccupied) {
+        return [{ id: `house-${p.id}`, unit_number: 'Casa', status: 'vacant', rent_amount: null, currency: null, propertyName: p.name, isHouseProperty: true, propertyId: p.id }];
+      }
+      return [];
+    }
+    return p.units.filter((u: Unit) => u.status === 'vacant').map((u: Unit) => ({ ...u, propertyName: p.name }));
+  }) || [];
 
   const renderRequest = ({ item }: { item: ConnectionRequestWithDetails }) => {
     const isPending = item.status === 'pending';
@@ -755,11 +835,18 @@ function NotificationsContent() {
   return (
     <SafeAreaView style={contentStyles.container} edges={['top']}>
       <View style={contentStyles.screenHeader}>
-        <Text style={contentStyles.screenTitle}>{t.notifications.title}</Text>
-        {pendingRequests.length > 0 && (
-          <View style={contentStyles.countBadge}>
-            <Text style={contentStyles.countText}>{pendingRequests.length}</Text>
-          </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={contentStyles.screenTitle}>{t.notifications.title}</Text>
+          {pendingRequests.length > 0 && (
+            <View style={contentStyles.countBadge}>
+              <Text style={contentStyles.countText}>{pendingRequests.length}</Text>
+            </View>
+          )}
+        </View>
+        {((requests as ConnectionRequestWithDetails[] | undefined)?.length ?? 0) > 0 && (
+          <TouchableOpacity onPress={() => setShowClearAllDialog(true)}>
+            <Text style={{ ...typography.bodySmall, color: colors.yellow, fontWeight: '600' }}>{t.notifications.clearAll}</Text>
+          </TouchableOpacity>
         )}
       </View>
       <FlatList
@@ -791,12 +878,12 @@ function NotificationsContent() {
               data={vacantUnits}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
-                <TouchableOpacity style={contentStyles.unitOption} onPress={() => handleSelectUnit(item.id)} disabled={approveRequest.isPending}>
+                <TouchableOpacity style={contentStyles.unitOption} onPress={() => handleSelectUnit(item)} disabled={approveRequest.isPending}>
                   <View>
                     <Text style={contentStyles.unitPropertyName}>{item.propertyName}</Text>
                     <Text style={contentStyles.unitNumber}>{item.unit_number}</Text>
                   </View>
-                  <Text style={contentStyles.unitRent}>{formatMonthlyRent(item.rent_amount, item.currency)}</Text>
+                  {item.rent_amount ? <Text style={contentStyles.unitRent}>{formatMonthlyRent(item.rent_amount, item.currency)}</Text> : null}
                 </TouchableOpacity>
               )}
               contentContainerStyle={contentStyles.unitsList}
@@ -810,6 +897,35 @@ function NotificationsContent() {
           )}
         </SafeAreaView>
       </Modal>
+      <ConfirmDialog
+        visible={showClearAllDialog}
+        title={t.notifications.clearAllConfirm}
+        message={t.notifications.clearAllConfirmMsg}
+        confirmText={t.notifications.clearAll}
+        cancelText={t.common.cancel}
+        destructive
+        onConfirm={() => clearAll.mutate()}
+        onCancel={() => setShowClearAllDialog(false)}
+      />
+      <ConfirmDialog
+        visible={!!rejectDialog}
+        title={t.notifications.declineConfirm}
+        message={`${t.notifications.declineConfirmMsg} ${rejectDialog?.request.tenant_name}?`}
+        confirmText={t.notifications.decline}
+        cancelText={t.common.cancel}
+        destructive
+        onConfirm={() => { rejectRequest.mutate(rejectDialog!.request.id); setRejectDialog(null); }}
+        onCancel={() => setRejectDialog(null)}
+      />
+      <ConfirmDialog
+        visible={!!infoDialog}
+        title={infoDialog?.title ?? ''}
+        message={infoDialog?.message}
+        confirmText="OK"
+        hideCancel
+        onConfirm={() => setInfoDialog(null)}
+        onCancel={() => setInfoDialog(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -828,7 +944,7 @@ function SettingsRow({ label, value }: { label: string; value: string | undefine
 }
 
 function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrency: Currency; onChangeCurrency: (c: Currency) => void }) {
-  const { owner, signOut, isLoading, fetchOwnerProfile } = useAuthStore();
+  const { owner, signOut, deleteAccount, isLoading, fetchOwnerProfile } = useAuthStore();
   const { t, language, setLanguage } = useI18n();
 
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
@@ -838,6 +954,206 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
   const [isPhoneEditing, setIsPhoneEditing] = useState(false);
   const [phoneValue, setPhoneValue] = useState(prefillPhone(owner?.phone));
   const [savingPhone, setSavingPhone] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const handlePickPhoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(t.common.error, 'Please allow access to your photo library.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.4,
+    });
+
+    if (result.canceled || !result.assets[0]) return;
+
+    setUploadingPhoto(true);
+    try {
+      const asset = result.assets[0];
+      const ext = asset.uri.split('.').pop() || 'jpg';
+      const filePath = `owner-${owner!.id}.${ext}`;
+
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, decode(base64), { contentType: `image/${ext}`, upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
+
+      const { error: updateError } = await supabase
+        .from('owners')
+        .update({ profile_image_url: publicUrl } as any)
+        .eq('id', owner!.id);
+
+      if (updateError) throw updateError;
+      await fetchOwnerProfile();
+    } catch (err: any) {
+      Alert.alert(t.common.error, err.message || 'Failed to upload photo.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const generateVistaGlobal = async () => {
+    if (!owner?.id) return;
+    setIsGeneratingPDF(true);
+    try {
+      const { data: properties, error } = await supabase
+        .from('properties')
+        .select(`
+          id, name, address, city, property_type,
+          units (
+            id, unit_number, rent_amount, currency,
+            tenants (
+              id, full_name, email, phone, rent_amount, lease_start, lease_end, status,
+              rent_payments (id, period_month, period_year, amount_due, amount_paid, status, paid_date, due_date),
+              maintenance_requests (id)
+            )
+          )
+        `)
+        .eq('owner_id', owner.id)
+        .order('name');
+
+      if (error) throw error;
+
+      const dateStr = format(new Date(), 'dd/MM/yyyy HH:mm');
+      const monthNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+      let propertiesHtml = '';
+      for (const prop of (properties || []) as any[]) {
+        const units = prop.units || [];
+        let unitsHtml = '';
+
+        for (const unit of units) {
+          const activeTenant = (unit.tenants || []).find((t: any) => t.status === 'active');
+          let tenantHtml = `<div class="no-tenant">Unidad vacante</div>`;
+
+          if (activeTenant) {
+            const payments: any[] = activeTenant.rent_payments || [];
+            let onTime = 0, late = 0, totalPaid = 0;
+
+            for (const p of payments.filter((p: any) => p.status === 'paid')) {
+              totalPaid += p.amount_paid || p.amount_due || 0;
+              if (p.paid_date && p.due_date && new Date(p.paid_date) > new Date(p.due_date)) {
+                late++;
+              } else {
+                onTime++;
+              }
+            }
+
+            const maintCount = (activeTenant.maintenance_requests || []).length;
+            const sorted = [...payments].sort((a: any, b: any) => {
+              const o: Record<string, number> = { paid: 0, due: 1, overdue: 2 };
+              if (a.status === 'paid' && b.status === 'paid') {
+                const aLate = a.paid_date && a.due_date && new Date(a.paid_date) > new Date(a.due_date);
+                const bLate = b.paid_date && b.due_date && new Date(b.paid_date) > new Date(b.due_date);
+                return (aLate ? 1 : 0) - (bLate ? 1 : 0);
+              }
+              return (o[a.status] ?? 3) - (o[b.status] ?? 3);
+            });
+
+            const paymentsHtml = sorted.length > 0 ? `
+              <table class="pt">
+                <thead><tr><th>Período</th><th>Monto</th><th>Estado</th><th>Fecha pago</th></tr></thead>
+                <tbody>
+                  ${sorted.map((p: any) => {
+                    const period = `${monthNames[(p.period_month || 1) - 1]} ${p.period_year}`;
+                    const amt = (p.amount_paid || p.amount_due || 0).toLocaleString();
+                    let cls = 'due', lbl = 'Pendiente';
+                    if (p.status === 'paid') {
+                      const isLate = p.paid_date && p.due_date && new Date(p.paid_date) > new Date(p.due_date);
+                      cls = isLate ? 'late' : 'ontime'; lbl = isLate ? 'Con retraso' : 'A tiempo';
+                    } else if (p.status === 'overdue') { cls = 'due'; lbl = 'Vencido'; }
+                    return `<tr><td>${period}</td><td>${unit.currency || 'USD'} ${amt}</td><td><span class="b b-${cls}">${lbl}</span></td><td>${p.paid_date || '-'}</td></tr>`;
+                  }).join('')}
+                </tbody>
+              </table>` : '';
+
+            tenantHtml = `
+              <div class="ts">
+                <div class="tn">${activeTenant.full_name || 'Sin nombre'}</div>
+                <div class="tm">${[activeTenant.email, activeTenant.phone].filter(Boolean).join(' · ')}</div>
+                <div class="sr">
+                  <div class="sb"><div class="sl">Pagos a tiempo</div><div class="sv g">${onTime}</div></div>
+                  <div class="sb"><div class="sl">Con retraso</div><div class="sv o">${late}</div></div>
+                  <div class="sb"><div class="sl">Mant.</div><div class="sv bl">${maintCount}</div></div>
+                  <div class="sb"><div class="sl">Ingresos</div><div class="sv">${unit.currency || 'USD'} ${totalPaid.toLocaleString()}</div></div>
+                </div>
+                ${paymentsHtml}
+              </div>`;
+          }
+
+          unitsHtml += `
+            <div class="unit">
+              <div class="uh"><span>${unit.unit_number}</span><span>${unit.currency || 'USD'} ${(unit.rent_amount || 0).toLocaleString()}/mes</span></div>
+              ${tenantHtml}
+            </div>`;
+        }
+
+        if (units.length === 0) unitsHtml = `<div class="no-tenant">Sin unidades</div>`;
+
+        propertiesHtml += `
+          <div class="prop">
+            <div class="pt-title">${prop.name}</div>
+            <div class="pa">${prop.address}${prop.city ? `, ${prop.city}` : ''}</div>
+            ${unitsHtml}
+          </div>`;
+      }
+
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+        *{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111;margin:0;padding:20px;font-size:13px}
+        h1{font-size:22px;margin:0 0 2px}
+        .sub{color:#666;font-size:12px;margin-bottom:20px}
+        .prop{margin-bottom:24px}
+        .pt-title{background:#1a1a2e;color:#facc15;padding:7px 12px;border-radius:6px;font-size:14px;font-weight:700;margin-bottom:6px}
+        .pa{color:#777;font-size:11px;margin-bottom:8px}
+        .unit{border:1px solid #e5e7eb;border-radius:6px;margin-bottom:8px;overflow:hidden}
+        .uh{background:#f3f4f6;padding:7px 12px;display:flex;justify-content:space-between;font-size:12px;font-weight:700}
+        .ts{padding:10px 12px}
+        .tn{font-size:13px;font-weight:700;margin-bottom:2px}
+        .tm{font-size:11px;color:#888;margin-bottom:8px}
+        .sr{display:flex;gap:8px;margin-bottom:8px}
+        .sb{flex:1;background:#f9fafb;border-radius:4px;padding:5px 8px}
+        .sl{font-size:10px;color:#888}
+        .sv{font-size:13px;font-weight:700}
+        .sv.g{color:#16a34a}.sv.o{color:#d97706}.sv.bl{color:#2563eb}
+        .pt{width:100%;border-collapse:collapse;font-size:11px}
+        .pt th{background:#f3f4f6;padding:4px 8px;text-align:left;color:#555;font-weight:600}
+        .pt td{padding:4px 8px;border-bottom:1px solid #f3f4f6}
+        .b{display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700}
+        .b-ontime{background:#dcfce7;color:#16a34a}
+        .b-late{background:#fef3c7;color:#d97706}
+        .b-due{background:#fee2e2;color:#dc2626}
+        .no-tenant{color:#aaa;font-style:italic;font-size:12px;padding:8px 12px}
+      </style></head><body>
+        <h1>Vista Global · Domia</h1>
+        <div class="sub">${owner.full_name || ''} · ${dateStr}</div>
+        ${propertiesHtml || '<p>No hay propiedades registradas.</p>'}
+      </body></html>`;
+
+      const { printToFileAsync } = await import('expo-print');
+      const { shareAsync } = await import('expo-sharing');
+      const { uri } = await printToFileAsync({ html, base64: false });
+      await shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: 'Vista Global · Domia',
+        UTI: 'com.adobe.pdf',
+      });
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'No se pudo generar el reporte.');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
 
   const handleSaveBankInfo = async () => {
     setSavingBank(true);
@@ -880,12 +1196,57 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
     ]);
   };
 
+  const [showDeleteWarning, setShowDeleteWarning] = useState(false);
+
+  const handleDeleteAccount = () => {
+    // Step 2: final confirmation after user dismissed subscription warning
+    Alert.alert(
+      (t.settings as any).deleteAccountConfirmTitle,
+      (t.settings as any).deleteAccountConfirmMsg,
+      [
+        { text: t.common.cancel, style: 'cancel' },
+        {
+          text: (t.settings as any).deleteAccount,
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteAccount();
+            } catch {
+              Alert.alert(t.common.error, (t.settings as any).deleteAccountFailed);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const toggleLanguage = (lang: Language) => setLanguage(lang);
 
   return (
     <SafeAreaView style={contentStyles.container} edges={['top']}>
       <ScrollView style={contentStyles.scrollView} contentContainerStyle={contentStyles.content} showsVerticalScrollIndicator={false}>
         <Text style={contentStyles.screenTitle}>{t.settings.title}</Text>
+
+        <View style={contentStyles.profileAvatarSection}>
+          <TouchableOpacity style={contentStyles.avatarContainer} onPress={handlePickPhoto} disabled={uploadingPhoto}>
+            {owner?.profile_image_url ? (
+              <Image source={{ uri: owner.profile_image_url }} style={contentStyles.avatar} />
+            ) : (
+              <View style={contentStyles.avatarFallback}>
+                <Text style={contentStyles.avatarInitials}>
+                  {(owner?.full_name || 'O').split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+                </Text>
+              </View>
+            )}
+            <View style={contentStyles.avatarCameraOverlay}>
+              {uploadingPhoto
+                ? <ActivityIndicator size="small" color="#ffffff" />
+                : <Feather name="camera" size={14} color="#ffffff" />}
+            </View>
+          </TouchableOpacity>
+          <Text style={contentStyles.avatarName}>{owner?.full_name}</Text>
+          <Text style={contentStyles.avatarEmail}>{owner?.email}</Text>
+        </View>
 
         <View style={contentStyles.settingsSection}>
           <Card>
@@ -909,7 +1270,7 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
             <Text style={contentStyles.settingsSectionTitle}>{t.settings.account}</Text>
             {!isPhoneEditing && (
               <TouchableOpacity onPress={() => { setPhoneValue(prefillPhone(owner?.phone)); setIsPhoneEditing(true); }}>
-                <Feather name="edit-2" size={16} color={colors.yellow} />
+                <Text style={contentStyles.editLink}>{t.common.edit}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -938,27 +1299,11 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
         </View>
 
         <View style={contentStyles.settingsSection}>
-          <Text style={contentStyles.settingsSectionTitle}>{t.settings.language}</Text>
-          <Card>
-            <View style={contentStyles.languageSelector}>
-              <TouchableOpacity style={[contentStyles.languageOption, language === 'en' && contentStyles.languageOptionActive]} onPress={() => toggleLanguage('en')}>
-                <Text style={[contentStyles.languageText, language === 'en' && contentStyles.languageTextActive]}>{t.settings.english}</Text>
-                {language === 'en' && <Feather name="check" size={18} color={colors.background} />}
-              </TouchableOpacity>
-              <TouchableOpacity style={[contentStyles.languageOption, language === 'es' && contentStyles.languageOptionActive]} onPress={() => toggleLanguage('es')}>
-                <Text style={[contentStyles.languageText, language === 'es' && contentStyles.languageTextActive]}>{t.settings.spanish}</Text>
-                {language === 'es' && <Feather name="check" size={18} color={colors.background} />}
-              </TouchableOpacity>
-            </View>
-          </Card>
-        </View>
-
-        <View style={contentStyles.settingsSection}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
             <Text style={contentStyles.settingsSectionTitle}>{t.bankInfo.title}</Text>
             {!isBankEditing && (
               <TouchableOpacity onPress={() => setIsBankEditing(true)}>
-                <Feather name="edit-2" size={16} color={colors.yellow} />
+                <Text style={contentStyles.editLink}>{t.common.edit}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -978,18 +1323,94 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
         </View>
 
         <View style={contentStyles.settingsSection}>
-          <Text style={contentStyles.settingsSectionTitle}>{t.settings.app}</Text>
+          <Text style={contentStyles.settingsSectionTitle}>{t.settings.language}</Text>
           <Card>
-            <SettingsRow label={t.settings.version} value="1.0.0" />
+            <View style={contentStyles.languageSelector}>
+              <TouchableOpacity style={[contentStyles.languageOption, language === 'en' && contentStyles.languageOptionActive]} onPress={() => toggleLanguage('en')}>
+                <Text style={[contentStyles.languageText, language === 'en' && contentStyles.languageTextActive]}>{t.settings.english}</Text>
+                {language === 'en' && <Feather name="check" size={18} color={colors.background} />}
+              </TouchableOpacity>
+              <TouchableOpacity style={[contentStyles.languageOption, language === 'es' && contentStyles.languageOptionActive]} onPress={() => toggleLanguage('es')}>
+                <Text style={[contentStyles.languageText, language === 'es' && contentStyles.languageTextActive]}>{t.settings.spanish}</Text>
+                {language === 'es' && <Feather name="check" size={18} color={colors.background} />}
+              </TouchableOpacity>
+            </View>
           </Card>
+        </View>
+
+        <View style={contentStyles.settingsSection}>
+          <Button
+            title={isGeneratingPDF ? (language === 'es' ? 'Generando...' : 'Generating...') : (language === 'es' ? 'Vista Global' : 'Macro View')}
+            onPress={generateVistaGlobal}
+            loading={isGeneratingPDF}
+            fullWidth
+          />
         </View>
 
         <View style={contentStyles.signOutSection}>
           <Button title={t.auth.logout} onPress={handleSignOut} variant="outline" loading={isLoading} fullWidth />
         </View>
 
+        <View style={contentStyles.deleteAccountSection}>
+          <TouchableOpacity
+            style={contentStyles.deleteAccountBtn}
+            onPress={() => setShowDeleteWarning(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={contentStyles.deleteAccountBtnText}>{(t.settings as any).deleteAccount}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={contentStyles.versionText}>{t.settings.version} 1.0.0</Text>
         <Text style={contentStyles.footer}>{t.settings.footer}</Text>
       </ScrollView>
+
+      {/* Delete Account — Step 1: Subscription Warning Modal */}
+      <Modal
+        visible={showDeleteWarning}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDeleteWarning(false)}
+      >
+        <View style={contentStyles.deleteModalOverlay}>
+          <View style={contentStyles.deleteModalCard}>
+            <Text style={contentStyles.deleteModalTitle}>
+              {(t.settings as any).deleteAccountWarningTitle}
+            </Text>
+            <Text style={contentStyles.deleteModalBody}>
+              {(t.settings as any).deleteAccountWarningBody}
+            </Text>
+            <TouchableOpacity
+              style={contentStyles.manageSubBtn}
+              onPress={() => Linking.openURL('https://play.google.com/store/account/subscriptions')}
+              activeOpacity={0.8}
+            >
+              <Text style={contentStyles.manageSubBtnText}>
+                {(t.settings as any).manageSubscription}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={contentStyles.continueDeleteBtn}
+              onPress={() => {
+                setShowDeleteWarning(false);
+                handleDeleteAccount();
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={contentStyles.continueDeleteBtnText}>
+                {(t.settings as any).continueToDelete}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={contentStyles.cancelDeleteBtn}
+              onPress={() => setShowDeleteWarning(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={contentStyles.cancelDeleteBtnText}>{t.common.cancel}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={showCurrencyModal}
@@ -1050,6 +1471,7 @@ export default function TabsLayout() {
   const { t } = useI18n();
   const { owner } = useAuthStore();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
   const pagerRef = useRef<PagerView>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [displayCurrency, setDisplayCurrency] = useState<Currency>('PYG');
@@ -1060,25 +1482,86 @@ export default function TabsLayout() {
     });
   }, []);
 
+  // Global real-time subscription — lives here so it's always active regardless of which tab is open
+  useEffect(() => {
+    if (!owner?.id) return;
+    const channel = supabase
+      .channel(`owner-global-rt-${owner.id}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'connection_requests', filter: `owner_id=eq.${owner.id}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['connection-requests'] });
+          queryClient.invalidateQueries({ queryKey: ['unseen-connections-count'] });
+        }
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'maintenance_requests', filter: `owner_id=eq.${owner.id}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['maintenance-requests'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+          queryClient.invalidateQueries({ queryKey: ['unseen-maintenance-count'] });
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [owner?.id, queryClient]);
+
   const handleChangeCurrency = useCallback(async (currency: Currency) => {
     setDisplayCurrency(currency);
     await AsyncStorage.setItem(DISPLAY_CURRENCY_KEY, currency);
   }, []);
 
-  const { data: pendingInboxCount } = useQuery({
-    queryKey: ['pending-connections-count', owner?.id],
+  const { data: unseenConnectionsCount } = useQuery({
+    queryKey: ['unseen-connections-count', owner?.id],
     queryFn: async () => {
       if (!owner?.id) return 0;
       const { count } = await supabase
         .from('connection_requests')
         .select('*', { count: 'exact', head: true })
         .eq('owner_id', owner.id)
-        .eq('status', 'pending');
+        .eq('seen_by_owner', false);
       return count || 0;
     },
     enabled: !!owner?.id,
-    refetchInterval: 30000,
+    staleTime: 0,
   });
+
+  const { data: unseenMaintenanceCount } = useQuery({
+    queryKey: ['unseen-maintenance-count', owner?.id],
+    queryFn: async () => {
+      if (!owner?.id) return 0;
+      const { count } = await supabase
+        .from('maintenance_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('owner_id', owner.id)
+        .eq('seen_by_owner', false);
+      return count || 0;
+    },
+    enabled: !!owner?.id,
+    staleTime: 0,
+  });
+
+  // Mark tab items as seen when owner opens the tab
+  useEffect(() => {
+    if (!owner?.id) return;
+
+    // TABS index 2 = maintenance, index 3 = notifications
+    if (currentIndex === 3) {
+      supabase
+        .from('connection_requests')
+        .update({ seen_by_owner: true } as any)
+        .eq('owner_id', owner.id)
+        .eq('seen_by_owner', false)
+        .then(() => queryClient.invalidateQueries({ queryKey: ['unseen-connections-count', owner.id] }));
+    } else if (currentIndex === 2) {
+      supabase
+        .from('maintenance_requests')
+        .update({ seen_by_owner: true } as any)
+        .eq('owner_id', owner.id)
+        .eq('seen_by_owner', false)
+        .then(() => queryClient.invalidateQueries({ queryKey: ['unseen-maintenance-count', owner.id] }));
+    }
+  }, [currentIndex, owner?.id, queryClient]);
 
   const handlePageSelected = useCallback((e: { nativeEvent: { position: number } }) => {
     setCurrentIndex(e.nativeEvent.position);
@@ -1089,7 +1572,8 @@ export default function TabsLayout() {
   }, []);
 
   const badgeCounts: Record<string, number> = {
-    notifications: pendingInboxCount || 0,
+    notifications: unseenConnectionsCount || 0,
+    maintenance: unseenMaintenanceCount || 0,
   };
 
   return (
@@ -1135,7 +1619,7 @@ export default function TabsLayout() {
                 <View style={styles.iconWrapper}>
                   <MaterialIcons
                     name={tab.icon}
-                    size={24}
+                    size={35}
                     color={focused ? colors.yellow : colors.gray[500]}
                   />
                   {badge > 0 && (
@@ -1205,6 +1689,10 @@ const contentStyles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
   logo: { height: 50, width: 150, marginLeft: -8 },
   ownerName: { ...typography.body, fontWeight: '600', color: colors.text.primary },
+  headerAvatarRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: spacing.sm },
+  headerAvatar: { width: 36, height: 36, borderRadius: 18 },
+  headerAvatarFallback: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.yellow, alignItems: 'center' as const, justifyContent: 'center' as const },
+  headerAvatarInitials: { ...typography.bodySmall, fontWeight: '700' as const, color: colors.background },
   statsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
   statCard: { flex: 1 },
   section: { marginTop: spacing.lg },
@@ -1229,13 +1717,13 @@ const contentStyles = StyleSheet.create({
   addButton: { backgroundColor: '#facc15', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: 8 },
   addButtonText: { ...typography.bodySmall, fontWeight: '600', color: colors.background },
   list: { padding: spacing.lg, paddingTop: 0 },
-  propertyCard: { marginBottom: spacing.md, backgroundColor: '#facc15' },
+  propertyCard: { marginBottom: spacing.md, backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#facc15' },
   propertyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   propertyInfo: { flex: 1 },
-  propertyName: { ...typography.h3, color: colors.background },
-  propertyAddress: { ...typography.bodySmall, color: 'rgba(0,0,0,0.55)', marginTop: 2 },
-  occupancyBadge: { backgroundColor: 'rgba(0,0,0,0.12)', paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: 6 },
-  occupancyText: { ...typography.bodySmall, fontWeight: '600', color: colors.background },
+  propertyName: { ...typography.h3, color: colors.text.primary },
+  propertyAddress: { ...typography.bodySmall, color: colors.text.secondary, marginTop: 2 },
+  occupancyBadge: { backgroundColor: 'rgba(250,204,21,0.15)', paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: 6 },
+  occupancyText: { ...typography.bodySmall, fontWeight: '600', color: '#facc15' },
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.xxl * 2 },
   emptyTitle: { ...typography.h3, color: colors.text.primary, marginBottom: spacing.xs, marginTop: spacing.md },
   emptySubtitle: { ...typography.body, color: colors.text.secondary, textAlign: 'center', marginBottom: spacing.lg },
@@ -1285,8 +1773,17 @@ const contentStyles = StyleSheet.create({
   noUnitsContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   noUnitsTitle: { ...typography.h3, color: colors.text.primary, marginTop: spacing.md, marginBottom: spacing.xs },
   noUnitsSubtitle: { ...typography.body, color: colors.text.secondary, textAlign: 'center' },
+  profileAvatarSection: { alignItems: 'center', paddingVertical: spacing.lg, marginBottom: spacing.md },
+  avatarContainer: { position: 'relative', marginBottom: spacing.sm },
+  avatar: { width: 88, height: 88, borderRadius: 44 },
+  avatarFallback: { width: 88, height: 88, borderRadius: 44, backgroundColor: colors.yellow, alignItems: 'center', justifyContent: 'center' },
+  avatarInitials: { ...typography.h2, fontWeight: '700', color: colors.background },
+  avatarCameraOverlay: { position: 'absolute', bottom: 0, right: 0, width: 28, height: 28, borderRadius: 14, backgroundColor: colors.gray[700], alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.background },
+  avatarName: { ...typography.h3, color: colors.text.primary, marginBottom: 2 },
+  avatarEmail: { ...typography.bodySmall, color: colors.text.secondary },
   settingsSection: { marginBottom: spacing.lg },
   settingsSectionTitle: { ...typography.bodySmall, fontWeight: '600', color: colors.text.secondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: spacing.sm, marginLeft: spacing.xs },
+  editLink: { ...typography.bodySmall, fontWeight: '600', color: colors.yellow },
   settingsRowItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.sm },
   settingsLabel: { ...typography.body, color: colors.text.primary },
   settingsValue: { ...typography.body, color: colors.text.secondary },
@@ -1305,7 +1802,8 @@ const contentStyles = StyleSheet.create({
   copyText: { ...typography.bodySmall, fontWeight: '600', color: '#facc15' },
   copyTextSuccess: { color: colors.success.main },
   signOutSection: { marginTop: spacing.xl },
-  footer: { ...typography.caption, color: colors.text.secondary, textAlign: 'center', marginTop: spacing.xxl },
+  footer: { ...typography.caption, color: colors.text.secondary, textAlign: 'center', marginTop: spacing.sm },
+  versionText: { ...typography.caption, color: colors.text.secondary, textAlign: 'center', marginTop: spacing.xxl },
   displayCurrencyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.sm },
   displayCurrencySelector: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceLight, borderRadius: 8, paddingVertical: 6, paddingHorizontal: spacing.md, gap: 6 },
   displayCurrencySelectorText: { ...typography.bodySmall, color: colors.text.primary, fontWeight: '600' },
@@ -1319,4 +1817,62 @@ const contentStyles = StyleSheet.create({
   currencyPickerItemActive: { backgroundColor: 'rgba(250, 204, 21, 0.1)' },
   currencyPickerItemText: { ...typography.body, color: colors.text.primary },
   currencyPickerItemTextActive: { color: '#facc15', fontWeight: '600' },
+
+  // ── Delete Account ──
+  deleteAccountSection: { marginTop: spacing.md },
+  deleteAccountBtn: {
+    borderWidth: 1,
+    borderColor: colors.error.main,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  deleteAccountBtnText: { ...typography.button, color: colors.error.main },
+  deleteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  deleteModalCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    width: '100%',
+  },
+  deleteModalTitle: {
+    ...typography.h3,
+    color: colors.text.primary,
+    marginBottom: spacing.md,
+    textAlign: 'center',
+  },
+  deleteModalBody: {
+    ...typography.body,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: spacing.xl,
+    lineHeight: 22,
+  },
+  manageSubBtn: {
+    backgroundColor: colors.yellow,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  manageSubBtnText: { ...typography.button, color: colors.background, textAlign: 'center' },
+  continueDeleteBtn: {
+    borderWidth: 1,
+    borderColor: colors.error.main,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  continueDeleteBtnText: { ...typography.button, color: colors.error.main },
+  cancelDeleteBtn: { paddingVertical: spacing.md, alignItems: 'center' },
+  cancelDeleteBtnText: { ...typography.body, color: colors.text.secondary },
 });

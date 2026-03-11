@@ -126,12 +126,6 @@ export const en = {
     permissionMessage: 'Please allow access to your photos to upload an image.',
     uploadFailed: 'Failed to upload image',
     createUnitFailed: 'Failed to create unit',
-    importCsv: 'Import CSV',
-    csvImporting: 'Importing…',
-    csvSuccess: (n: number) => `${n} ${n === 1 ? 'property' : 'properties'} imported successfully.`,
-    csvPartial: (ok: number, fail: number) => `${ok} imported, ${fail} failed. Check that all rows have a name and address.`,
-    csvEmpty: 'No valid rows found. Make sure your CSV has columns: Property Name, Address, City, Property Type.',
-    csvReadError: 'Could not read the file. Please try again.',
   },
 
   // Units
@@ -159,6 +153,7 @@ export const en = {
     deleteUnit: 'Delete Unit',
     deleteUnitConfirm: 'Are you sure? This will also remove any tenant associations.',
     editUnit: 'Edit Unit',
+    duplicate: 'Duplicate',
     saveChanges: 'Save Changes',
     noTenantAssigned: 'No tenant assigned',
     tenantHistory: 'Tenant History',
@@ -272,6 +267,12 @@ export const en = {
     deleteAccountConfirmTitle: 'Delete Account?',
     deleteAccountConfirmMsg: 'This will permanently delete all your properties, units, tenants, and data. This cannot be undone.',
     deleteAccountFailed: 'Failed to delete account. Please try again.',
+    upgradePlanTitle: 'Unit Limit Reached',
+    upgradePlanBody: (limit: number, planName: string) => `You've reached the ${limit}-unit limit on the ${planName} plan. Upgrade to add more units.`,
+    upgradeChoosePlan: 'Choose an upgrade:',
+    upgradeButton: 'Upgrade',
+    upgradeSuccess: 'Plan upgraded successfully!',
+    upgradeFailed: 'Upgrade failed. Please try again.',
   },
 
   // Notifications / Connection Requests
@@ -475,13 +476,11 @@ export const en = {
     perMonth: '/month',
     selectPlan: 'Select a plan to continue',
     // Step 4
-    whatToAchieve: 'What do you want to achieve with Domia?',
-    moreTime: 'More time for other important things',
-    moreVisibility: 'More visibility over my properties',
-    whoIsPaying: "Know who is paying and who isn't",
-    moreOrganized: 'Be more organized with files and documents',
-    financialClarity: 'Financial Clarity',
-    lessStress: 'Be less stressed out, live more',
+    whatToAchieve: 'What goals do you want to achieve with Domia?',
+    moreTime: 'Have more time for other things',
+    moreOrganized: 'Be more organized with my rental management',
+    financialClarity: 'Have more financial clarity',
+    lessStress: 'Live with less stress',
     selectGoal: 'Select at least one goal',
     // Step 5
     commitmentText: 'I, {name}, will use Domia to {goal}.',

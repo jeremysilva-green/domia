@@ -128,12 +128,6 @@ export const es: Translations = {
     permissionMessage: 'Por favor permite el acceso a tus fotos para subir una imagen.',
     uploadFailed: 'Error al subir imagen',
     createUnitFailed: 'Error al crear unidad',
-    importCsv: 'Importar CSV',
-    csvImporting: 'Importando…',
-    csvSuccess: (n: number) => `${n} ${n === 1 ? 'propiedad importada' : 'propiedades importadas'} exitosamente.`,
-    csvPartial: (ok: number, fail: number) => `${ok} importadas, ${fail} fallidas. Verifica que todas las filas tengan nombre y dirección.`,
-    csvEmpty: 'No se encontraron filas válidas. Asegúrate de que el CSV tenga las columnas: Nombre de la Propiedad, Dirección, Ciudad, Tipo de Propiedad.',
-    csvReadError: 'No se pudo leer el archivo. Por favor intenta de nuevo.',
   },
 
   // Units
@@ -161,6 +155,7 @@ export const es: Translations = {
     deleteUnit: 'Eliminar Unidad',
     deleteUnitConfirm: '¿Estás seguro? Esto también eliminará las asociaciones de inquilinos.',
     editUnit: 'Editar Unidad',
+    duplicate: 'Duplicar',
     saveChanges: 'Guardar Cambios',
     noTenantAssigned: 'Sin inquilino asignado',
     tenantHistory: 'Historial de Inquilinos',
@@ -274,6 +269,12 @@ export const es: Translations = {
     deleteAccountConfirmTitle: '¿Eliminar Cuenta?',
     deleteAccountConfirmMsg: 'Esto eliminará permanentemente todas tus propiedades, unidades, inquilinos y datos. Esta acción no se puede deshacer.',
     deleteAccountFailed: 'No se pudo eliminar la cuenta. Por favor, intenta de nuevo.',
+    upgradePlanTitle: 'Límite de Unidades Alcanzado',
+    upgradePlanBody: (limit: number, planName: string) => `Alcanzaste el límite de ${limit} unidades del plan ${planName}. Actualiza para agregar más.`,
+    upgradeChoosePlan: 'Elige un plan:',
+    upgradeButton: 'Actualizar',
+    upgradeSuccess: '¡Plan actualizado correctamente!',
+    upgradeFailed: 'Error al actualizar. Por favor, intenta de nuevo.',
   },
 
   // Notifications / Connection Requests
@@ -477,13 +478,11 @@ export const es: Translations = {
     perMonth: '/mes',
     selectPlan: 'Selecciona un plan para continuar',
     // Paso 4
-    whatToAchieve: '¿Qué quieres lograr con Domia?',
-    moreTime: 'Más tiempo para otras cosas importantes',
-    moreVisibility: 'Más visibilidad sobre mis propiedades',
-    whoIsPaying: 'Saber quién está pagando y quién no',
-    moreOrganized: 'Estar más organizado con archivos y documentos',
-    financialClarity: 'Claridad Financiera',
-    lessStress: 'Menos estrés, vivir más',
+    whatToAchieve: '¿Qué objetivos quieres lograr con Domia?',
+    moreTime: 'Tener más tiempo para otras cosas',
+    moreOrganized: 'Ser más ordenado con mi gestión de alquileres',
+    financialClarity: 'Tener más claridad financiera',
+    lessStress: 'Vivir con menos estrés',
     selectGoal: 'Selecciona al menos un objetivo',
     // Paso 5
     commitmentText: 'Yo, {name}, usaré Domia para {goal}.',

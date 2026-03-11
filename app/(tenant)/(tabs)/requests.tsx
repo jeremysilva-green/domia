@@ -1,18 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   RefreshControl,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../../src/services/supabase';
 import { useAuthStore } from '../../../src/stores/authStore';
-import { Card, Button } from '../../../src/components/ui';
+import { Card, Button, ConfirmDialog } from '../../../src/components/ui';
 import { colors, spacing, typography } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
 
@@ -20,7 +22,20 @@ export default function TenantRequestsScreen() {
   const { t } = useI18n();
   const router = useRouter();
   const { user } = useAuthStore();
+  const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  const storageKey = user?.id ? `tenant-requests-dismissed-${user.id}` : null;
+
+  // Load dismissed IDs from storage on mount
+  useEffect(() => {
+    if (!storageKey) return;
+    AsyncStorage.getItem(storageKey).then((raw) => {
+      if (raw) setDismissedIds(new Set(JSON.parse(raw)));
+    });
+  }, [storageKey]);
 
   // Check if tenant is connected
   const { data: connection } = useQuery({
@@ -42,7 +57,7 @@ export default function TenantRequestsScreen() {
   });
 
   // Fetch maintenance requests submitted by this tenant
-  const { data: requests = [], refetch } = useQuery({
+  const { data: allRequests = [], refetch } = useQuery({
     queryKey: ['tenant-maintenance-requests', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
@@ -59,11 +74,46 @@ export default function TenantRequestsScreen() {
     enabled: !!user?.id,
   });
 
+  // Filter out dismissed requests
+  const requests = allRequests.filter((r: any) => !dismissedIds.has(r.id));
+
+  // Real-time: refresh list when owner updates a request's status
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`tenant-maintenance-rt-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'maintenance_requests',
+          filter: `tenant_id=eq.${user.id}`,
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['tenant-maintenance-requests', user.id] });
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id, queryClient]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await refetch();
     setRefreshing(false);
   };
+
+  const handleClearAll = useCallback(async () => {
+    if (!storageKey) return;
+    const allIds = allRequests.map((r: any) => r.id);
+    const merged = Array.from(new Set([...Array.from(dismissedIds), ...allIds]));
+    await AsyncStorage.setItem(storageKey, JSON.stringify(merged));
+    setDismissedIds(new Set(merged));
+    setShowClearConfirm(false);
+  }, [storageKey, allRequests, dismissedIds]);
 
   const isConnected = !!connection;
 
@@ -84,16 +134,21 @@ export default function TenantRequestsScreen() {
     );
   }
 
+  const statusStyle: Record<string, { badge: object; text: object; label: string }> = {
+    submitted:  { badge: styles.submittedBadge,  text: styles.submittedText,  label: t.maintenance.submitted },
+    in_progress:{ badge: styles.inProgressBadge, text: styles.inProgressText, label: t.maintenance.inProgress },
+    completed:  { badge: styles.completedBadge,  text: styles.completedText,  label: t.maintenance.completed },
+    cancelled:  { badge: styles.cancelledBadge,  text: styles.cancelledText,  label: t.maintenance.cancelled },
+  };
+
   const renderRequestItem = ({ item }: { item: any }) => {
-    const isCompleted = item.status === 'completed';
+    const s = statusStyle[item.status] ?? statusStyle.submitted;
     return (
       <Card style={styles.requestCard}>
         <View style={styles.requestHeader}>
           <Text style={styles.requestTitle} numberOfLines={1}>{item.title}</Text>
-          <View style={isCompleted ? styles.completedBadge : styles.pendingBadge}>
-            <Text style={isCompleted ? styles.completedText : styles.pendingText}>
-              {isCompleted ? t.maintenance.completed : t.maintenance.pending}
-            </Text>
+          <View style={s.badge}>
+            <Text style={s.text}>{s.label}</Text>
           </View>
         </View>
         <Text style={styles.requestDescription} numberOfLines={2}>
@@ -107,13 +162,21 @@ export default function TenantRequestsScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>{t.maintenance.title}</Text>
+      </View>
+
+      <View style={styles.newRequestRow}>
         <Button
           title={t.maintenance.newRequest}
           size="sm"
           onPress={() => router.push('/(tenant)/maintenance/new')}
-          style={styles.newRequestButton}
         />
       </View>
+
+      {requests.length > 0 && (
+        <TouchableOpacity onPress={() => setShowClearConfirm(true)} style={styles.clearAllRow}>
+          <Text style={styles.clearAll}>{t.tenantRequests.clearAll}</Text>
+        </TouchableOpacity>
+      )}
 
       <FlatList
         data={requests}
@@ -134,6 +197,17 @@ export default function TenantRequestsScreen() {
           </View>
         }
       />
+
+      <ConfirmDialog
+        visible={showClearConfirm}
+        title={t.tenantRequests.clearAllConfirm}
+        message={t.tenantRequests.clearAllConfirmMsg}
+        confirmText={t.tenantRequests.clearAll}
+        cancelText={t.common.cancel}
+        destructive
+        onConfirm={handleClearAll}
+        onCancel={() => setShowClearConfirm(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -146,15 +220,27 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
   title: {
     ...typography.h3,
     color: colors.text.primary,
-    marginBottom: spacing.sm,
   },
-  newRequestButton: {
-    alignSelf: 'center',
+  newRequestRow: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  clearAllRow: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  clearAll: {
+    ...typography.bodySmall,
+    color: colors.yellow,
+    fontWeight: '600',
   },
   listContent: {
     padding: spacing.lg,
@@ -180,16 +266,27 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.text.secondary,
   },
-  pendingBadge: {
+  submittedBadge: {
     backgroundColor: colors.warning.light,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: 12,
   },
-  pendingText: {
+  submittedText: {
     ...typography.caption,
     fontWeight: '600',
     color: colors.warning.main,
+  },
+  inProgressBadge: {
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 12,
+  },
+  inProgressText: {
+    ...typography.caption,
+    fontWeight: '600',
+    color: '#3b82f6',
   },
   completedBadge: {
     backgroundColor: colors.success.light,
@@ -201,6 +298,17 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontWeight: '600',
     color: colors.success.main,
+  },
+  cancelledBadge: {
+    backgroundColor: colors.surfaceLight,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 12,
+  },
+  cancelledText: {
+    ...typography.caption,
+    fontWeight: '600',
+    color: colors.text.secondary,
   },
   notConnected: {
     flex: 1,

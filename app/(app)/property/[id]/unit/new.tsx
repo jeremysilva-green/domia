@@ -24,7 +24,6 @@ export default function NewUnitScreen() {
   const { id: propertyId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
-
   const [unitNumber, setUnitNumber] = useState('');
   const [rentAmount, setRentAmount] = useState('');
   const [currency, setCurrency] = useState<Currency>('USD');
@@ -58,6 +57,7 @@ export default function NewUnitScreen() {
       queryClient.invalidateQueries({ queryKey: ['property', propertyId] });
       queryClient.invalidateQueries({ queryKey: ['properties'] });
       queryClient.invalidateQueries({ queryKey: ['properties-with-units'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       router.back();
     },
     onError: (error: any) => {
