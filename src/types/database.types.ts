@@ -126,6 +126,7 @@ export interface Database {
           rent_amount: number;
           currency: string;
           status: 'occupied' | 'vacant' | 'maintenance';
+          fine_amount: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -138,6 +139,7 @@ export interface Database {
           rent_amount: number;
           currency?: string;
           status?: 'occupied' | 'vacant' | 'maintenance';
+          fine_amount?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -150,6 +152,7 @@ export interface Database {
           rent_amount?: number;
           currency?: string;
           status?: 'occupied' | 'vacant' | 'maintenance';
+          fine_amount?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -253,6 +256,8 @@ export interface Database {
           paid_date: string | null;
           status: 'paid' | 'due' | 'late' | 'partial';
           notes: string | null;
+          proof_image_url: string | null;
+          proof_seen_by_owner: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -267,6 +272,8 @@ export interface Database {
           paid_date?: string | null;
           status?: 'paid' | 'due' | 'late' | 'partial';
           notes?: string | null;
+          proof_image_url?: string | null;
+          proof_seen_by_owner?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -281,6 +288,8 @@ export interface Database {
           paid_date?: string | null;
           status?: 'paid' | 'due' | 'late' | 'partial';
           notes?: string | null;
+          proof_image_url?: string | null;
+          proof_seen_by_owner?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -398,6 +407,48 @@ export interface Database {
           }
         ];
       };
+      disconnection_requests: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          owner_id: string;
+          tenant_name: string;
+          tenant_email: string;
+          tenant_phone: string | null;
+          unit_info: string | null;
+          reason: string;
+          acknowledged: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          owner_id: string;
+          tenant_name: string;
+          tenant_email: string;
+          tenant_phone?: string | null;
+          unit_info?: string | null;
+          reason: string;
+          acknowledged?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          owner_id?: string;
+          tenant_name?: string;
+          tenant_email?: string;
+          tenant_phone?: string | null;
+          unit_info?: string | null;
+          reason?: string;
+          acknowledged?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       connection_requests: {
         Row: {
           id: string;
@@ -408,6 +459,7 @@ export interface Database {
           tenant_phone: string | null;
           status: 'pending' | 'approved' | 'rejected';
           unit_id: string | null;
+          disconnection_pending: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -420,6 +472,7 @@ export interface Database {
           tenant_phone?: string | null;
           status?: 'pending' | 'approved' | 'rejected';
           unit_id?: string | null;
+          disconnection_pending?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -432,6 +485,7 @@ export interface Database {
           tenant_phone?: string | null;
           status?: 'pending' | 'approved' | 'rejected';
           unit_id?: string | null;
+          disconnection_pending?: boolean;
           created_at?: string;
           updated_at?: string;
         };

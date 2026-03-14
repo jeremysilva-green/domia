@@ -421,9 +421,12 @@ function PropertiesContent() {
         .eq('owner_id', user.id)
         .order('name');
       if (error) throw error;
-      return data || [];
+      return (data || []) as any[];
     },
     enabled: !!user?.id,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchInterval: 15000,
   });
 
   const onRefresh = async () => {
@@ -538,7 +541,7 @@ function MaintenanceContent() {
       }
       const { data, error } = await query;
       if (error) throw error;
-      return data || [];
+      return (data || []) as any[];
     },
     enabled: !!owner?.id,
   });
@@ -601,7 +604,7 @@ interface ConnectionRequestWithDetails extends ConnectionRequest {
 }
 
 interface PropertyWithUnitsLocal extends Property {
-  units: Unit[];
+  units: any[];
 }
 
 function NotificationsContent() {
@@ -615,6 +618,8 @@ function NotificationsContent() {
   const [rejectDialog, setRejectDialog] = useState<{ request: ConnectionRequestWithDetails } | null>(null);
   const [infoDialog, setInfoDialog] = useState<{ title: string; message: string } | null>(null);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
+  const [proofPreviewUrl, setProofPreviewUrl] = useState<string | null>(null);
+  const [expandedDisconnectId, setExpandedDisconnectId] = useState<string | null>(null);
 
   const { data: requests, isLoading, refetch } = useQuery<ConnectionRequestWithDetails[]>({
     queryKey: ['connection-requests', owner?.id],
@@ -626,7 +631,7 @@ function NotificationsContent() {
         .eq('owner_id', owner.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return data || [];
+      return (data || []) as any[];
     },
     enabled: !!owner?.id,
     staleTime: 0,
@@ -646,6 +651,8 @@ function NotificationsContent() {
       return data || [];
     },
     enabled: !!owner?.id,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   const approveRequest = useMutation({
@@ -749,6 +756,110 @@ function NotificationsContent() {
       setInfoDialog({ title: t.common.done, message: t.notifications.clearAllSuccess });
     },
     onError: (error: any) => Alert.alert(t.common.error, error.message || 'Failed to clear notifications'),
+  });
+
+  const { data: paymentProofs } = useQuery({
+    queryKey: ['owner-payment-proofs', owner?.id],
+    queryFn: async () => {
+      if (!owner?.id) return [];
+      const { data } = await supabase
+        .from('rent_payments')
+        .select('*, tenant:tenants!inner(id, full_name, owner_id)')
+        .eq('tenant.owner_id', owner.id)
+        .not('proof_image_url', 'is', null)
+        .eq('proof_seen_by_owner', false)
+        .order('updated_at', { ascending: false });
+      return (data || []) as any[];
+    },
+    enabled: !!owner?.id,
+    refetchInterval: 30000,
+    staleTime: 0,
+  });
+
+  const confirmPaymentMutation = useMutation({
+    mutationFn: async (paymentId: string) => {
+      const today = new Date().toISOString().split('T')[0];
+      const { error } = await supabase
+        .from('rent_payments')
+        .update({ status: 'paid', paid_date: today, proof_seen_by_owner: true })
+        .eq('id', paymentId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['owner-payment-proofs', owner?.id] });
+      queryClient.invalidateQueries({ queryKey: ['unseen-payment-proofs-count', owner?.id] });
+    },
+  });
+
+  const { data: disconnectionRequests } = useQuery({
+    queryKey: ['owner-disconnection-requests', owner?.id],
+    queryFn: async () => {
+      if (!owner?.id) return [];
+      const { data } = await supabase
+        .from('disconnection_requests')
+        .select('*')
+        .eq('owner_id', owner.id)
+        .eq('acknowledged', false)
+        .order('created_at', { ascending: false });
+      return (data || []) as any[];
+    },
+    enabled: !!owner?.id,
+    refetchInterval: 30000,
+    staleTime: 0,
+  });
+
+  const acknowledgeDisconnectMutation = useMutation({
+    mutationFn: async ({ id, tenantId }: { id: string; tenantId: string }) => {
+      // 1. Find the connection request for this tenant to get unit_id
+      const { data: connReq } = await supabase
+        .from('connection_requests')
+        .select('id, unit_id')
+        .eq('tenant_id', tenantId)
+        .single();
+
+      const unitId = connReq?.unit_id ?? null;
+
+      // 2. Set unit back to vacant
+      if (unitId) {
+        const { error: unitError } = await supabase
+          .from('units')
+          .update({ status: 'vacant' })
+          .eq('id', unitId);
+        if (unitError) throw unitError;
+      }
+
+      // 3. Delete tenant record
+      const { error: tenantError } = await supabase
+        .from('tenants')
+        .delete()
+        .eq('id', tenantId);
+      if (tenantError) throw tenantError;
+
+      // 4. Delete connection request
+      if (connReq?.id) {
+        await supabase
+          .from('connection_requests')
+          .delete()
+          .eq('id', connReq.id);
+      }
+
+      // 5. Mark disconnection request as acknowledged
+      const { error } = await supabase
+        .from('disconnection_requests')
+        .update({ acknowledged: true })
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['owner-disconnection-requests', owner?.id] });
+      queryClient.invalidateQueries({ queryKey: ['unseen-disconnections-count', owner?.id] });
+      queryClient.invalidateQueries({ queryKey: ['connection-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['properties-with-units'] });
+      queryClient.invalidateQueries({ queryKey: ['properties'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['tenants'] });
+    },
+    onError: (error: any) => Alert.alert(t.common.error, error.message),
   });
 
   const handleApprove = (request: ConnectionRequestWithDetails) => {
@@ -857,8 +968,105 @@ function NotificationsContent() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={!isLoading ? renderEmpty : null}
-        ListHeaderComponent={pendingRequests.length > 0 ? <Text style={contentStyles.listSectionTitle}>{t.notifications.pendingRequests}</Text> : null}
+        ListHeaderComponent={
+          <>
+            {disconnectionRequests && disconnectionRequests.length > 0 && (
+              <View>
+                <Text style={contentStyles.listSectionTitle}>{t.disconnectionRequests.sectionTitle}</Text>
+                {disconnectionRequests.map((req: any) => (
+                  <Card key={req.id} style={contentStyles.notifCard}>
+                    <View style={contentStyles.notifHeader}>
+                      <View style={contentStyles.notifInfo}>
+                        <Text style={contentStyles.notifName}>{req.tenant_name}</Text>
+                        <Text style={contentStyles.notifEmail}>{req.tenant_email}</Text>
+                        {req.unit_info && <Text style={contentStyles.notifPhone}>{req.unit_info}</Text>}
+                      </View>
+                      <Badge label={t.disconnectionRequests.sectionTitle} variant="error" size="sm" />
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setExpandedDisconnectId(expandedDisconnectId === req.id ? null : req.id)}
+                      style={contentStyles.disconnectReasonRow}
+                    >
+                      <Text style={contentStyles.disconnectReasonLabel}>{t.disconnectionRequests.reason}</Text>
+                      <Feather
+                        name={expandedDisconnectId === req.id ? 'chevron-up' : 'chevron-down'}
+                        size={14}
+                        color={colors.text.secondary}
+                      />
+                    </TouchableOpacity>
+                    {expandedDisconnectId === req.id && (
+                      <Text style={contentStyles.disconnectReasonText}>{req.reason}</Text>
+                    )}
+                    <Text style={contentStyles.notifDate}>{new Date(req.created_at).toLocaleDateString()}</Text>
+                    <Button
+                      title={t.disconnectionRequests.acknowledge}
+                      size="sm"
+                      onPress={() => acknowledgeDisconnectMutation.mutate({ id: req.id, tenantId: req.tenant_id })}
+                      loading={acknowledgeDisconnectMutation.isPending}
+                      style={contentStyles.disconnectAckBtn}
+                    />
+                    {req.tenant_phone && (
+                      <Button
+                        title={t.disconnectionRequests.whatsapp}
+                        size="sm"
+                        variant="outline"
+                        onPress={() => {
+                          const digits = req.tenant_phone.replace(/[^0-9]/g, '');
+                          Linking.openURL(`https://wa.me/${digits}`);
+                        }}
+                        style={contentStyles.whatsappBtn}
+                        textStyle={contentStyles.whatsappBtnText}
+                      />
+                    )}
+                  </Card>
+                ))}
+              </View>
+            )}
+            {paymentProofs && paymentProofs.length > 0 && (
+              <View>
+                <Text style={contentStyles.listSectionTitle}>{t.payments.title}</Text>
+                {paymentProofs.map((payment: any) => (
+                  <Card key={payment.id} style={contentStyles.notifCard}>
+                    <View style={contentStyles.notifHeader}>
+                      <View style={contentStyles.notifInfo}>
+                        <Text style={contentStyles.notifName}>{payment.tenant?.full_name}</Text>
+                        <Text style={contentStyles.notifEmail}>
+                          {t.payments.dueOn} {new Date(payment.due_date).toLocaleDateString()} · {payment.amount_due?.toLocaleString()}
+                        </Text>
+                      </View>
+                      <Badge label={t.payments.pendingConfirmation} variant="warning" size="sm" />
+                    </View>
+                    <TouchableOpacity onPress={() => setProofPreviewUrl(payment.proof_image_url)}>
+                      <Image source={{ uri: payment.proof_image_url }} style={contentStyles.proofThumbnail} resizeMode="cover" />
+                    </TouchableOpacity>
+                    <View style={contentStyles.notifActions}>
+                      <Button
+                        title={t.payments.markPaid}
+                        size="sm"
+                        onPress={() => confirmPaymentMutation.mutate(payment.id)}
+                        loading={confirmPaymentMutation.isPending}
+                        style={contentStyles.actionButton}
+                      />
+                    </View>
+                  </Card>
+                ))}
+              </View>
+            )}
+            {pendingRequests.length > 0 && <Text style={contentStyles.listSectionTitle}>{t.notifications.pendingRequests}</Text>}
+          </>
+        }
       />
+      {/* Proof image preview modal */}
+      <Modal visible={!!proofPreviewUrl} transparent animationType="fade" onRequestClose={() => setProofPreviewUrl(null)}>
+        <View style={contentStyles.proofModalOverlay}>
+          <TouchableOpacity style={contentStyles.proofModalClose} onPress={() => setProofPreviewUrl(null)}>
+            <Feather name="x" size={24} color="#fff" />
+          </TouchableOpacity>
+          {proofPreviewUrl && (
+            <Image source={{ uri: proofPreviewUrl }} style={contentStyles.proofModalImage} resizeMode="contain" />
+          )}
+        </View>
+      </Modal>
       <Modal visible={showUnitModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { setShowUnitModal(false); setSelectedRequest(null); }}>
         <SafeAreaView style={contentStyles.modalContainer}>
           <View style={contentStyles.modalHeader}>
@@ -1502,6 +1710,21 @@ export default function TabsLayout() {
           queryClient.invalidateQueries({ queryKey: ['unseen-maintenance-count'] });
         }
       )
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'rent_payments' },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['unseen-payment-proofs-count'] });
+          queryClient.invalidateQueries({ queryKey: ['owner-payment-proofs'] });
+        }
+      )
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'units' },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['properties'] });
+          queryClient.invalidateQueries({ queryKey: ['properties-with-units'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+        }
+      )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [owner?.id, queryClient]);
@@ -1541,18 +1764,42 @@ export default function TabsLayout() {
     staleTime: 0,
   });
 
+  const { data: unseenPaymentProofsCount } = useQuery({
+    queryKey: ['unseen-payment-proofs-count', owner?.id],
+    queryFn: async () => {
+      if (!owner?.id) return 0;
+      const tenantIds = (await supabase.from('tenants').select('id').eq('owner_id', owner.id)).data?.map((t) => t.id) || [];
+      if (tenantIds.length === 0) return 0;
+      const { count } = await supabase
+        .from('rent_payments')
+        .select('*', { count: 'exact', head: true })
+        .in('tenant_id', tenantIds)
+        .not('proof_image_url', 'is', null)
+        .eq('proof_seen_by_owner', false);
+      return count || 0;
+    },
+    enabled: !!owner?.id,
+    staleTime: 0,
+  });
+
   // Mark tab items as seen when owner opens the tab
   useEffect(() => {
     if (!owner?.id) return;
 
-    // TABS index 2 = maintenance, index 3 = notifications
-    if (currentIndex === 3) {
+    // TABS index 1 = properties, index 2 = maintenance, index 3 = notifications
+    if (currentIndex === 1) {
+      queryClient.invalidateQueries({ queryKey: ['properties', owner.id] });
+      queryClient.invalidateQueries({ queryKey: ['properties-with-units', owner.id] });
+    } else if (currentIndex === 3) {
       supabase
         .from('connection_requests')
         .update({ seen_by_owner: true } as any)
         .eq('owner_id', owner.id)
         .eq('seen_by_owner', false)
         .then(() => queryClient.invalidateQueries({ queryKey: ['unseen-connections-count', owner.id] }));
+      queryClient.invalidateQueries({ queryKey: ['unseen-payment-proofs-count', owner.id] });
+      queryClient.invalidateQueries({ queryKey: ['owner-payment-proofs', owner.id] });
+      queryClient.invalidateQueries({ queryKey: ['owner-disconnection-requests', owner.id] });
     } else if (currentIndex === 2) {
       supabase
         .from('maintenance_requests')
@@ -1572,7 +1819,7 @@ export default function TabsLayout() {
   }, []);
 
   const badgeCounts: Record<string, number> = {
-    notifications: unseenConnectionsCount || 0,
+    notifications: (unseenConnectionsCount || 0) + (unseenPaymentProofsCount || 0),
     maintenance: unseenMaintenanceCount || 0,
   };
 
@@ -1875,4 +2122,14 @@ const contentStyles = StyleSheet.create({
   continueDeleteBtnText: { ...typography.button, color: colors.error.main },
   cancelDeleteBtn: { paddingVertical: spacing.md, alignItems: 'center' },
   cancelDeleteBtnText: { ...typography.body, color: colors.text.secondary },
+  proofThumbnail: { width: '100%', height: 160, borderRadius: 8, marginVertical: spacing.sm },
+  proofModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' },
+  proofModalClose: { position: 'absolute', top: 56, right: 20, zIndex: 10, padding: spacing.sm },
+  proofModalImage: { width: '100%', height: '80%' },
+  disconnectReasonRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm },
+  disconnectReasonLabel: { ...typography.caption, color: colors.text.secondary, flex: 1 },
+  disconnectReasonText: { ...typography.bodySmall, color: colors.text.primary, fontStyle: 'italic', marginTop: spacing.xs, marginBottom: spacing.xs },
+  disconnectAckBtn: { marginTop: spacing.sm, backgroundColor: colors.error.main, borderColor: colors.error.main },
+  whatsappBtn: { marginTop: spacing.sm, borderColor: '#25D366' },
+  whatsappBtnText: { color: '#25D366' },
 });

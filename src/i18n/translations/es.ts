@@ -161,6 +161,10 @@ export const es: Translations = {
     tenantHistory: 'Historial de Inquilinos',
     leasePeriod: 'Período del Contrato',
     viewDetails: 'Toca para ver detalles',
+    fineAmount: 'Multa',
+    fineGraceNote: 'Se aplica diariamente desde el vencimiento · 3 días de gracia',
+    noFine: 'Sin multa configurada',
+    finePerDay: '/día',
   },
 
   // Tenants
@@ -344,9 +348,15 @@ export const es: Translations = {
     getStarted: 'Comenzar',
     connectFeatures: 'Conéctate con tu propietario para acceder a todas las funciones, incluyendo solicitudes de mantenimiento, seguimiento de renta y más.',
     submitRequest: 'Enviar Solicitud de Mantenimiento',
-    disconnect: 'Desconectarse del Propietario',
+    disconnect: 'Desvincular Propiedad',
     disconnectConfirm: 'Desconectarse',
     disconnectConfirmMsg: '¿Estás seguro de que quieres desconectarte de tu propietario? Puedes reconectarte más tarde buscando a tu propietario nuevamente.',
+    disconnectRequestTitle: 'Solicitud de desvinculación',
+    disconnectRequestSubtitle: 'Cuéntanos por qué quieres irte',
+    disconnectReasonPrefix: 'Quisiera desvincularme de esta unidad porque:',
+    disconnectReasonPlaceholder: 'ej. Me mudo a otro lugar...',
+    disconnectSend: 'Enviar solicitud',
+    disconnectPending: 'Desvinculación solicitada · esperando aprobación del propietario',
     whatsapp: 'WhatsApp',
   },
 
@@ -513,5 +523,26 @@ export const es: Translations = {
     goalOrganized: 'estar organizado con tus archivos',
     goalClarity: 'tener más claridad financiera',
     goalLessStress: 'vivir con menos estrés',
+  },
+
+  // Pagos
+  payments: {
+    title: 'Pagos',
+    alDia: 'Al día',
+    mora: 'Mora',
+    pendingConfirmation: 'Pendiente',
+    accumulatedFine: 'Multa acumulada',
+    uploadProof: 'Subir comprobante',
+    proofUploaded: 'Comprobante enviado · pendiente de confirmación',
+    markPaid: 'Pagó',
+    dueOn: 'Vence',
+  },
+
+  // Solicitudes de desvinculación (bandeja del propietario)
+  disconnectionRequests: {
+    sectionTitle: 'Desvinculaciones',
+    reason: 'Motivo',
+    acknowledge: 'Desvincular',
+    whatsapp: 'WhatsApp al Inquilino',
   },
 };

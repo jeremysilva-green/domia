@@ -159,6 +159,10 @@ export const en = {
     tenantHistory: 'Tenant History',
     leasePeriod: 'Lease Period',
     viewDetails: 'Tap to view full details',
+    fineAmount: 'Fine',
+    fineGraceNote: 'Applied daily from rent due date · 3-day grace period',
+    noFine: 'No fine set',
+    finePerDay: '/day',
   },
 
   // Tenants
@@ -345,6 +349,12 @@ export const en = {
     disconnect: 'Disconnect from Owner',
     disconnectConfirm: 'Disconnect',
     disconnectConfirmMsg: 'Are you sure you want to disconnect from your owner? You can reconnect later by finding your owner again.',
+    disconnectRequestTitle: 'Disconnection Request',
+    disconnectRequestSubtitle: 'Please tell us why you want to leave',
+    disconnectReasonPrefix: 'I would like to disconnect from this unit because:',
+    disconnectReasonPlaceholder: 'e.g. I am moving to another location...',
+    disconnectSend: 'Send Request',
+    disconnectPending: 'Disconnection requested · awaiting owner approval',
     whatsapp: 'WhatsApp',
   },
 
@@ -511,6 +521,27 @@ export const en = {
     goalOrganized: 'stay organized with files',
     goalClarity: 'have more financial clarity',
     goalLessStress: 'live with less stress',
+  },
+
+  // Payments
+  payments: {
+    title: 'Payments',
+    alDia: 'Up to date',
+    mora: 'Overdue',
+    pendingConfirmation: 'Pending',
+    accumulatedFine: 'Fine',
+    uploadProof: 'Upload Proof',
+    proofUploaded: 'Proof sent · awaiting confirmation',
+    markPaid: 'Mark Paid',
+    dueOn: 'Due',
+  },
+
+  // Disconnection requests (owner inbox)
+  disconnectionRequests: {
+    sectionTitle: 'Disconnections',
+    reason: 'Reason',
+    acknowledge: 'Disconnect',
+    whatsapp: 'WhatsApp Tenant',
   },
 };
 

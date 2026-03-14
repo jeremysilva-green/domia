@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Alert, Image, TouchableOpacity, Modal, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Alert, Image, TouchableOpacity, Modal, Linking, TextInput } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -7,7 +7,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { supabase } from '../../../src/services/supabase';
-import { Card, Button, ConfirmDialog } from '../../../src/components/ui';
+import { Card, Button, Badge, ConfirmDialog } from '../../../src/components/ui';
+import * as ImagePicker from 'expo-image-picker';
+import { decode } from 'base64-arraybuffer';
 import { colors, spacing, typography } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
 
@@ -18,6 +20,9 @@ export default function TenantHomeScreen() {
   const { tenantProfile, user } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
   const [leaseModalVisible, setLeaseModalVisible] = useState(false);
+  const [proofModalVisible, setProofModalVisible] = useState(false);
+  const [disconnectModalVisible, setDisconnectModalVisible] = useState(false);
+  const [disconnectReason, setDisconnectReason] = useState('');
   const [dialog, setDialog] = useState<{ title: string; message: string; confirmText: string; destructive?: boolean; onConfirm: () => void } | null>(null);
 
   // Get connection request status
@@ -31,7 +36,7 @@ export default function TenantHomeScreen() {
         .select(`
           *,
           owner:owners(full_name, email, phone, bank_full_name, bank_name, bank_account_number, bank_ruc, bank_alias, profile_image_url),
-          unit:units(unit_number, property:properties(name, address, image_url))
+          unit:units(unit_number, fine_amount, property:properties(name, address, image_url))
         `)
         .eq('tenant_id', user.id)
         .order('created_at', { ascending: false })
@@ -111,10 +116,73 @@ export default function TenantHomeScreen() {
     return { score, onTimeCount, lateCount, totalPayments };
   }, [rentPayments]);
 
+  // Current payment (most recent by due_date)
+  const { data: currentPayment, refetch: refetchCurrentPayment } = useQuery({
+    queryKey: ['tenant-current-payment', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from('rent_payments')
+        .select('*')
+        .eq('tenant_id', user.id)
+        .order('due_date', { ascending: false })
+        .limit(1)
+        .single();
+      return data ?? null;
+    },
+    enabled: !!user?.id && connectionRequest?.status === 'approved',
+  });
+
+  // Mora = days past (due_date + 3-day grace) with accumulated fine
+  const moraData = useMemo(() => {
+    if (!currentPayment) return null;
+    if (currentPayment.status === 'paid' || currentPayment.proof_image_url) return null;
+    const today = new Date();
+    const dueDate = new Date(currentPayment.due_date);
+    const daysSinceDue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+    const daysInMora = Math.max(0, daysSinceDue - 3);
+    if (daysInMora === 0) return null;
+    const finePerDay = connectionRequest?.unit?.fine_amount ?? 0;
+    return { daysInMora, accumulatedFine: daysInMora * finePerDay, finePerDay };
+  }, [currentPayment, connectionRequest]);
+
+  // Upload proof of payment image
+  const uploadProofMutation = useMutation({
+    mutationFn: async () => {
+      if (!currentPayment) throw new Error('No payment record');
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please allow access to your photo library.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+        base64: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      const ext = asset.uri.split('.').pop() ?? 'jpg';
+      const filePath = `${user!.id}/${currentPayment.id}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('payment-proofs')
+        .upload(filePath, decode(asset.base64!), { contentType: `image/${ext}`, upsert: true });
+      if (uploadError) throw uploadError;
+      const { data: { publicUrl } } = supabase.storage.from('payment-proofs').getPublicUrl(filePath);
+      const { error } = await supabase
+        .from('rent_payments')
+        .update({ proof_image_url: publicUrl })
+        .eq('id', currentPayment.id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tenant-current-payment', user?.id] }),
+    onError: (err: any) => Alert.alert('Error', err.message),
+  });
+
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([refetch(), refetchPayments(), refetchLease()]);
+      await Promise.all([refetch(), refetchPayments(), refetchLease(), refetchCurrentPayment()]);
     } finally {
       setRefreshing(false);
     }
@@ -152,6 +220,18 @@ export default function TenantHomeScreen() {
           queryClient.invalidateQueries({ queryKey: ['tenant-lease', user.id] });
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'rent_payments',
+          filter: `tenant_id=eq.${user.id}`,
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['tenant-current-payment', user.id] });
+        }
+      )
       .subscribe();
 
     return () => {
@@ -159,50 +239,57 @@ export default function TenantHomeScreen() {
     };
   }, [user?.id, queryClient]);
 
-  const disconnectMutation = useMutation({
-    mutationFn: async () => {
+  const submitDisconnectMutation = useMutation({
+    mutationFn: async (reason: string) => {
       if (!user?.id || !connectionRequest?.id) throw new Error('No connection found');
 
-      // Get unit_id from the connection request; fall back to the tenants table
-      let unitId: string | null = connectionRequest.unit_id ?? null;
-      if (!unitId) {
-        const { data: tenantRecord } = await supabase
-          .from('tenants')
-          .select('unit_id')
-          .eq('id', user.id)
-          .single();
-        unitId = tenantRecord?.unit_id ?? null;
-      }
+      const unitNumber = (connectionRequest?.unit as any)?.unit_number;
+      const propertyName = (connectionRequest?.unit as any)?.property?.name;
+      const unitInfo = unitNumber && propertyName ? `${unitNumber} · ${propertyName}` : (unitNumber || propertyName || null);
+      const fullReason = `${t.tenantHome.disconnectReasonPrefix} ${reason}`;
 
-      // Update unit first (while tenant record still references it for RLS check)
-      if (unitId) {
-        const { error: unitError } = await supabase
-          .from('units')
-          .update({ status: 'vacant' })
-          .eq('id', unitId);
-        if (unitError) throw unitError;
-      }
+      // 1. Save disconnection request (for owner inbox)
+      const { error: insertError } = await supabase
+        .from('disconnection_requests')
+        .insert({
+          tenant_id: user.id,
+          owner_id: connectionRequest.owner_id,
+          tenant_name: connectionRequest.tenant_name,
+          tenant_email: connectionRequest.tenant_email,
+          tenant_phone: connectionRequest.tenant_phone ?? null,
+          unit_info: unitInfo,
+          reason: fullReason,
+        });
+      if (insertError) throw insertError;
 
-      // Then remove tenant record
-      const { error: tenantError } = await supabase
-        .from('tenants')
-        .delete()
-        .eq('id', user.id);
-      if (tenantError) throw tenantError;
-
-      // Finally remove the connection request
-      const { error: reqError } = await supabase
+      // 2. Mark the connection request as pending disconnection
+      const { error: flagError } = await supabase
         .from('connection_requests')
-        .delete()
+        .update({ disconnection_pending: true } as any)
         .eq('id', connectionRequest.id);
-      if (reqError) throw reqError;
+      if (flagError) throw flagError;
+
+      // 3. Send email to owner (best-effort — don't block on failure)
+      try {
+        await supabase.functions.invoke('send-disconnection-email', {
+          body: {
+            ownerEmail: (connectionRequest?.owner as any)?.email,
+            ownerName: (connectionRequest?.owner as any)?.full_name,
+            tenantName: connectionRequest.tenant_name,
+            tenantEmail: connectionRequest.tenant_email,
+            unitInfo,
+            reason: fullReason,
+          },
+        });
+      } catch (_e) {}
     },
     onSuccess: () => {
+      setDisconnectModalVisible(false);
+      setDisconnectReason('');
       queryClient.invalidateQueries({ queryKey: ['tenant-connection', user?.id] });
-      queryClient.invalidateQueries({ queryKey: ['tenant-payments', user?.id] });
     },
     onError: (error: any) => {
-      Alert.alert('Error', error.message || 'Failed to disconnect. Please try again.');
+      Alert.alert(t.common.error, error.message || 'Failed to disconnect. Please try again.');
     },
   });
 
@@ -214,13 +301,8 @@ export default function TenantHomeScreen() {
   };
 
   const handleDisconnect = () => {
-    setDialog({
-      title: t.tenantHome.disconnectConfirm,
-      message: t.tenantHome.disconnectConfirmMsg,
-      confirmText: t.tenantHome.disconnectConfirm,
-      destructive: true,
-      onConfirm: () => disconnectMutation.mutate(),
-    });
+    setDisconnectReason('');
+    setDisconnectModalVisible(true);
   };
 
   const isConnected = connectionRequest?.status === 'approved';
@@ -331,6 +413,51 @@ export default function TenantHomeScreen() {
               </View>
             </Card>
 
+            {currentPayment && (
+              <Card style={styles.pagosCard}>
+                <View style={styles.pagosHeader}>
+                  <View style={styles.pagosTitleRow}>
+                    <Feather name="credit-card" size={18} color={colors.yellow} />
+                    <Text style={styles.pagosTitleText}>{t.payments.title}</Text>
+                  </View>
+                  {currentPayment.status === 'paid' ? (
+                    <Badge label={t.payments.alDia} variant="success" size="sm" />
+                  ) : currentPayment.proof_image_url ? (
+                    <Badge label={t.payments.pendingConfirmation} variant="warning" size="sm" />
+                  ) : moraData ? (
+                    <Badge label={`${t.payments.mora} · ${moraData.daysInMora}d`} variant="error" size="sm" />
+                  ) : (
+                    <Badge label={t.payments.alDia} variant="success" size="sm" />
+                  )}
+                </View>
+                <Text style={styles.pagosDate}>
+                  {t.payments.dueOn} {new Date(currentPayment.due_date).toLocaleDateString()} · {currentPayment.amount_due?.toLocaleString()}
+                </Text>
+                {moraData && moraData.finePerDay > 0 && (
+                  <Text style={styles.pagosFineLine}>
+                    {t.payments.accumulatedFine}: {moraData.accumulatedFine?.toLocaleString()}
+                  </Text>
+                )}
+                {currentPayment.status !== 'paid' && (
+                  currentPayment.proof_image_url ? (
+                    <TouchableOpacity onPress={() => setProofModalVisible(true)} style={styles.pagosProofRow}>
+                      <Feather name="check-circle" size={15} color={colors.warning.main} />
+                      <Text style={styles.pagosProofText}>{t.payments.proofUploaded}</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <Button
+                      title={t.payments.uploadProof}
+                      variant="outline"
+                      size="sm"
+                      onPress={() => uploadProofMutation.mutate()}
+                      loading={uploadProofMutation.isPending}
+                      style={styles.pagosUploadBtn}
+                    />
+                  )
+                )}
+              </Card>
+            )}
+
             {tenantScore.totalPayments > 0 && (
               <Card style={styles.scoreCard}>
                 <View style={styles.scoreHeader}>
@@ -429,15 +556,21 @@ export default function TenantHomeScreen() {
               </View>
             </View>
 
-            <Button
-              title="Disconnect Property"
-              variant="outline"
-              onPress={handleDisconnect}
-              loading={disconnectMutation.isPending}
-              fullWidth
-              style={styles.disconnectButton}
-              textStyle={styles.disconnectText}
-            />
+            {(connectionRequest as any)?.disconnection_pending ? (
+              <View style={styles.disconnectPendingRow}>
+                <Feather name="clock" size={15} color={colors.warning.main} />
+                <Text style={styles.disconnectPendingText}>{t.tenantHome.disconnectPending}</Text>
+              </View>
+            ) : (
+              <Button
+                title={t.tenantHome.disconnect}
+                variant="outline"
+                onPress={handleDisconnect}
+                fullWidth
+                style={styles.disconnectButton}
+                textStyle={styles.disconnectText}
+              />
+            )}
           </>
         ) : isPending ? (
           <Card style={styles.pendingCard}>
@@ -468,6 +601,30 @@ export default function TenantHomeScreen() {
         )}
       </ScrollView>
 
+      {/* Proof Image Modal */}
+      <Modal
+        visible={proofModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setProofModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalClose}
+            onPress={() => setProofModalVisible(false)}
+          >
+            <Feather name="x" size={24} color={colors.white} />
+          </TouchableOpacity>
+          {currentPayment?.proof_image_url && (
+            <Image
+              source={{ uri: currentPayment.proof_image_url }}
+              style={styles.modalImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
+
       {/* Lease Image Modal */}
       <Modal
         visible={leaseModalVisible}
@@ -489,6 +646,56 @@ export default function TenantHomeScreen() {
               resizeMode="contain"
             />
           )}
+        </View>
+      </Modal>
+      {/* Disconnection Request Modal */}
+      <Modal
+        visible={disconnectModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDisconnectModalVisible(false)}
+      >
+        <View style={styles.disconnectModalOverlay}>
+          <View style={styles.disconnectModalCard}>
+            <View style={styles.disconnectModalHeader}>
+              <Text style={styles.disconnectModalTitle}>{t.tenantHome.disconnectRequestTitle}</Text>
+              <TouchableOpacity onPress={() => setDisconnectModalVisible(false)}>
+                <Feather name="x" size={22} color={colors.text.secondary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.disconnectModalSubtitle}>{t.tenantHome.disconnectRequestSubtitle}</Text>
+            <Text style={styles.disconnectReasonPrefix}>{t.tenantHome.disconnectReasonPrefix}</Text>
+            <TextInput
+              style={styles.disconnectReasonInput}
+              value={disconnectReason}
+              onChangeText={setDisconnectReason}
+              placeholder={t.tenantHome.disconnectReasonPlaceholder}
+              placeholderTextColor={colors.text.disabled}
+              multiline
+              numberOfLines={4}
+              autoFocus
+            />
+            <View style={styles.disconnectModalActions}>
+              <Button
+                title={t.common.cancel}
+                variant="outline"
+                onPress={() => setDisconnectModalVisible(false)}
+                style={{ flex: 1 }}
+              />
+              <Button
+                title={t.tenantHome.disconnectSend}
+                onPress={() => {
+                  if (!disconnectReason.trim()) {
+                    Alert.alert('', t.tenantHome.disconnectReasonPlaceholder);
+                    return;
+                  }
+                  submitDisconnectMutation.mutate(disconnectReason.trim());
+                }}
+                loading={submitDisconnectMutation.isPending}
+                style={{ flex: 1, borderColor: colors.error.main }}
+              />
+            </View>
+          </View>
         </View>
       </Modal>
       <ConfirmDialog
@@ -858,5 +1065,111 @@ const styles = StyleSheet.create({
   modalImage: {
     width: '100%',
     height: '80%',
+  },
+  pagosCard: {
+    marginBottom: spacing.lg,
+  },
+  pagosHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  pagosTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  pagosTitleText: {
+    ...typography.body,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  pagosDate: {
+    ...typography.bodySmall,
+    color: colors.text.secondary,
+    marginBottom: spacing.xs,
+  },
+  pagosFineLine: {
+    ...typography.bodySmall,
+    color: colors.error.main,
+    marginBottom: spacing.sm,
+  },
+  pagosProofRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  pagosProofText: {
+    ...typography.caption,
+    color: colors.warning.main,
+    flex: 1,
+  },
+  pagosUploadBtn: {
+    marginTop: spacing.sm,
+    alignSelf: 'flex-start',
+  },
+  disconnectModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  disconnectModalCard: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  disconnectModalHeader: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    marginBottom: spacing.sm,
+  },
+  disconnectModalTitle: {
+    ...typography.h3,
+    color: colors.text.primary,
+  },
+  disconnectModalSubtitle: {
+    ...typography.bodySmall,
+    color: colors.text.secondary,
+    marginBottom: spacing.md,
+  },
+  disconnectReasonPrefix: {
+    ...typography.body,
+    color: colors.text.primary,
+    fontStyle: 'italic' as const,
+    marginBottom: spacing.sm,
+  },
+  disconnectReasonInput: {
+    backgroundColor: colors.background,
+    borderRadius: 8,
+    padding: spacing.md,
+    fontSize: 15,
+    color: colors.text.primary,
+    minHeight: 100,
+    textAlignVertical: 'top' as const,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  disconnectModalActions: {
+    flexDirection: 'row' as const,
+    gap: spacing.sm,
+  },
+  disconnectPendingRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+  },
+  disconnectPendingText: {
+    ...typography.bodySmall,
+    color: colors.warning.main,
+    fontStyle: 'italic' as const,
+    flexShrink: 1,
   },
 });
