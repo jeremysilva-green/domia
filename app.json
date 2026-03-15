@@ -15,15 +15,15 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.domus.app"
+      "bundleIdentifier": "com.domia.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/Domia app icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.domus.app",
-      "versionCode": 23,
+      "package": "com.domia.app",
+      "versionCode": 24,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "com.android.vending.BILLING"
