@@ -22,9 +22,8 @@
         "foregroundImage": "./assets/Domia app icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.domus.app",
-      "versionCode": 17,
+      "versionCode": 22,
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
@@ -39,7 +38,14 @@
       [
         "expo-notifications",
         {
-          "color": "#1a1a2e"
+          "color": "#1a1a2e",
+          "sounds": [
+            "./assets/snd_due_date.mp3",
+            "./assets/snd_passed_due.mp3",
+            "./assets/snd_notification.mp3",
+            "./assets/snd_paid.mp3",
+            "./assets/snd_request.mp3"
+          ]
         }
       ],
       [

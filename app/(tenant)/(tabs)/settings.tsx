@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -339,6 +340,12 @@ export default function TenantSettingsScreen() {
           </Card>
         </View>
 
+        <View style={styles.privacySection}>
+          <TouchableOpacity onPress={() => Linking.openURL('https://six-frame-e12.notion.site/Privacy-Policy-7250559bfbeb830ea06401cdbc8467d9?source=copy_link')}>
+            <Text style={styles.privacyLink}>{t.settings.privacyPolicy}</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.signOutSection}>
           <Button
             title={t.auth.logout}
@@ -487,6 +494,15 @@ const styles = StyleSheet.create({
   },
   editButton: {
     flex: 1,
+  },
+  privacySection: {
+    marginTop: spacing.lg,
+    alignItems: 'center',
+  },
+  privacyLink: {
+    ...typography.bodySmall,
+    color: colors.text.secondary,
+    textDecorationLine: 'underline',
   },
   signOutSection: {
     marginTop: spacing.xl,

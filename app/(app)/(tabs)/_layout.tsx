@@ -1,6 +1,6 @@
 // Force rebundle: 2026-02-04T21:30:00 - All yellow colors are now #facc15
 import { useRef, useCallback, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList, RefreshControl, Image, Modal, Alert, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList, RefreshControl, Image, Modal, Alert, ActivityIndicator, Linking, TextInput } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import PagerView from 'react-native-pager-view';
@@ -27,6 +27,8 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CURRENCIES, Currency, getCurrencySymbol, getCurrencyLabel, formatMonthlyRent } from '../../../src/utils/currency';
 import { prefillPhone } from '../../../src/utils/phoneCountryCode';
+import { playSound } from '../../../src/utils/sounds';
+import { setupNotificationChannels, requestNotificationPermissions } from '../../../src/utils/notificationScheduler';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
@@ -386,7 +388,9 @@ function DashboardContent({ displayCurrency }: { displayCurrency: Currency }) {
 
 function PropertyCard({ property }: { property: PropertyWithUnits }) {
   const router = useRouter();
-  const occupiedCount = property.units.filter((u) => u.status === 'occupied').length;
+  const occupiedCount = property.units.filter((u: any) =>
+    Array.isArray(u.tenants) ? u.tenants.some((t: any) => t.status === 'active') : u.status === 'occupied'
+  ).length;
   const totalCount = property.units.length;
 
   return (
@@ -411,13 +415,14 @@ function PropertiesContent() {
   const { user } = useAuthStore();
   const { t } = useI18n();
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const { data: properties, isLoading, refetch } = useQuery<PropertyWithUnits[]>({
     queryKey: ['properties', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
       const { data, error } = await supabase
         .from('properties')
-        .select(`*, units (id, status)`)
+        .select(`*, units (id, status, tenants (id, status))`)
         .eq('owner_id', user.id)
         .order('name');
       if (error) throw error;
@@ -437,6 +442,10 @@ function PropertiesContent() {
       setRefreshing(false);
     }
   };
+
+  const filteredProperties = (properties || []).filter((p) =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const renderEmpty = () => (
     <View style={contentStyles.emptyContainer}>
@@ -458,8 +467,19 @@ function PropertiesContent() {
           <Text style={contentStyles.addButtonText}>+ {t.common.add}</Text>
         </TouchableOpacity>
       </View>
+      <View style={contentStyles.searchContainer}>
+        <MaterialIcons name="search" size={20} color="#9ca3af" style={contentStyles.searchIcon} />
+        <TextInput
+          style={contentStyles.searchInput}
+          placeholder="Search properties..."
+          placeholderTextColor="#9ca3af"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          clearButtonMode="while-editing"
+        />
+      </View>
       <FlatList
-        data={properties}
+        data={filteredProperties}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <PropertyCard property={item} />}
         contentContainerStyle={contentStyles.list}
@@ -644,7 +664,7 @@ function NotificationsContent() {
       if (!owner?.id) return [];
       const { data, error } = await supabase
         .from('properties')
-        .select(`*, units (id, unit_number, status, rent_amount, currency)`)
+        .select(`*, units (id, unit_number, status, rent_amount, currency, tenants (id, status))`)
         .eq('owner_id', owner.id)
         .order('name');
       if (error) throw error;
@@ -656,7 +676,7 @@ function NotificationsContent() {
   });
 
   const approveRequest = useMutation({
-    mutationFn: async ({ requestId, unitId, propertyId }: { requestId: string; unitId?: string; propertyId?: string }) => {
+    mutationFn: async ({ requestId, unitId, propertyId, tenantId }: { requestId: string; unitId?: string; propertyId?: string; tenantId?: string }) => {
       let resolvedUnitId = unitId;
 
       // For house-type properties, find or create a unit representing the house (atomic upsert)
@@ -703,8 +723,7 @@ function NotificationsContent() {
       const { error: unitError } = await supabase.from('units').update({ status: 'occupied' }).eq('id', resolvedUnitId);
       if (unitError) throw unitError;
     },
-    onSuccess: () => {
-      const tenantId = selectedRequest?.tenant_id;
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['connection-requests'] });
       queryClient.invalidateQueries({ queryKey: ['properties'] });
       queryClient.invalidateQueries({ queryKey: ['properties-with-units'] });
@@ -714,9 +733,9 @@ function NotificationsContent() {
       setShowUnitModal(false);
       setSelectedRequest(null);
 
-      // Navigate to tenant detail page
-      if (tenantId) {
-        router.push(`/(app)/tenant/${tenantId}` as any);
+      // Navigate to tenant detail page using tenantId from mutation variables (not stale closure)
+      if (variables.tenantId) {
+        router.push(`/(app)/tenant/${variables.tenantId}` as any);
       } else {
         Alert.alert(t.common.success, t.notifications.approvalSuccess);
       }
@@ -786,6 +805,7 @@ function NotificationsContent() {
       if (error) throw error;
     },
     onSuccess: () => {
+      playSound('paid');
       queryClient.invalidateQueries({ queryKey: ['owner-payment-proofs', owner?.id] });
       queryClient.invalidateQueries({ queryKey: ['unseen-payment-proofs-count', owner?.id] });
     },
@@ -874,9 +894,9 @@ function NotificationsContent() {
   const handleSelectUnit = (item: { id: string; isHouseProperty?: boolean; propertyId?: string }) => {
     if (!selectedRequest) return;
     if (item.isHouseProperty && item.propertyId) {
-      approveRequest.mutate({ requestId: selectedRequest.id, propertyId: item.propertyId });
+      approveRequest.mutate({ requestId: selectedRequest.id, propertyId: item.propertyId, tenantId: selectedRequest.tenant_id });
     } else {
-      approveRequest.mutate({ requestId: selectedRequest.id, unitId: item.id });
+      approveRequest.mutate({ requestId: selectedRequest.id, unitId: item.id, tenantId: selectedRequest.tenant_id });
     }
   };
 
@@ -891,15 +911,17 @@ function NotificationsContent() {
 
   const pendingRequests = requests?.filter((r) => r.status === 'pending') || [];
   const processedRequests = requests?.filter((r) => r.status !== 'pending') || [];
+  const isUnitVacant = (u: any) =>
+    Array.isArray(u.tenants) ? !u.tenants.some((t: any) => t.status === 'active') : u.status === 'vacant';
   const vacantUnits = properties?.flatMap((p): any[] => {
     if ((p as any).property_type === 'house') {
-      const isOccupied = p.units.some((u: Unit) => u.status === 'occupied');
+      const isOccupied = p.units.some((u: any) => !isUnitVacant(u));
       if (!isOccupied) {
         return [{ id: `house-${p.id}`, unit_number: 'Casa', status: 'vacant', rent_amount: null, currency: null, propertyName: p.name, isHouseProperty: true, propertyId: p.id }];
       }
       return [];
     }
-    return p.units.filter((u: Unit) => u.status === 'vacant').map((u: Unit) => ({ ...u, propertyName: p.name }));
+    return p.units.filter((u: any) => isUnitVacant(u)).map((u: any) => ({ ...u, propertyName: p.name, propertyId: p.id }));
   }) || [];
 
   const renderRequest = ({ item }: { item: ConnectionRequestWithDetails }) => {
@@ -1081,9 +1103,13 @@ function NotificationsContent() {
               <Text style={contentStyles.selectedTenantName}>{selectedRequest.tenant_name}</Text>
             </View>
           )}
-          {vacantUnits.length > 0 ? (
+          {(() => {
+            const unitsForRequest = selectedRequest?.property_id
+              ? vacantUnits.filter((u: any) => u.propertyId === selectedRequest.property_id)
+              : vacantUnits;
+            return unitsForRequest.length > 0 ? (
             <FlatList
-              data={vacantUnits}
+              data={unitsForRequest}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <TouchableOpacity style={contentStyles.unitOption} onPress={() => handleSelectUnit(item)} disabled={approveRequest.isPending}>
@@ -1102,7 +1128,8 @@ function NotificationsContent() {
               <Text style={contentStyles.noUnitsTitle}>{t.notifications.noVacantUnits}</Text>
               <Text style={contentStyles.noUnitsSubtitle}>{t.notifications.noVacantUnitsSubtitle}</Text>
             </View>
-          )}
+          );
+          })()}
         </SafeAreaView>
       </Modal>
       <ConfirmDialog
@@ -1555,6 +1582,12 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
           />
         </View>
 
+        <View style={contentStyles.privacySection}>
+          <TouchableOpacity onPress={() => Linking.openURL('https://six-frame-e12.notion.site/Privacy-Policy-7250559bfbeb830ea06401cdbc8467d9?source=copy_link')}>
+            <Text style={contentStyles.privacyLink}>{t.settings.privacyPolicy}</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={contentStyles.signOutSection}>
           <Button title={t.auth.logout} onPress={handleSignOut} variant="outline" loading={isLoading} fullWidth />
         </View>
@@ -1688,6 +1721,8 @@ export default function TabsLayout() {
     AsyncStorage.getItem(DISPLAY_CURRENCY_KEY).then((val) => {
       if (val) setDisplayCurrency(val as Currency);
     });
+    setupNotificationChannels();
+    requestNotificationPermissions();
   }, []);
 
   // Global real-time subscription — lives here so it's always active regardless of which tab is open
@@ -1782,6 +1817,22 @@ export default function TabsLayout() {
     staleTime: 0,
   });
 
+  const { data: unseenDisconnectionCount } = useQuery({
+    queryKey: ['unseen-disconnection-count', owner?.id],
+    queryFn: async () => {
+      if (!owner?.id) return 0;
+      const { count } = await supabase
+        .from('disconnection_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('owner_id', owner.id)
+        .eq('acknowledged', false);
+      return count || 0;
+    },
+    enabled: !!owner?.id,
+    staleTime: 0,
+    refetchInterval: 30000,
+  });
+
   // Mark tab items as seen when owner opens the tab
   useEffect(() => {
     if (!owner?.id) return;
@@ -1800,6 +1851,7 @@ export default function TabsLayout() {
       queryClient.invalidateQueries({ queryKey: ['unseen-payment-proofs-count', owner.id] });
       queryClient.invalidateQueries({ queryKey: ['owner-payment-proofs', owner.id] });
       queryClient.invalidateQueries({ queryKey: ['owner-disconnection-requests', owner.id] });
+      queryClient.invalidateQueries({ queryKey: ['unseen-disconnection-count', owner.id] });
     } else if (currentIndex === 2) {
       supabase
         .from('maintenance_requests')
@@ -1819,9 +1871,28 @@ export default function TabsLayout() {
   }, []);
 
   const badgeCounts: Record<string, number> = {
-    notifications: (unseenConnectionsCount || 0) + (unseenPaymentProofsCount || 0),
+    notifications: (unseenConnectionsCount || 0) + (unseenPaymentProofsCount || 0) + (unseenDisconnectionCount || 0),
     maintenance: unseenMaintenanceCount || 0,
   };
+
+  const prevNotifCount = useRef<number>(0);
+  const prevMaintenanceCount = useRef<number>(0);
+
+  useEffect(() => {
+    const current = badgeCounts.notifications;
+    if (prevNotifCount.current !== undefined && current > prevNotifCount.current) {
+      playSound('notification');
+    }
+    prevNotifCount.current = current;
+  }, [badgeCounts.notifications]);
+
+  useEffect(() => {
+    const current = badgeCounts.maintenance;
+    if (prevMaintenanceCount.current !== undefined && current > prevMaintenanceCount.current) {
+      playSound('request');
+    }
+    prevMaintenanceCount.current = current;
+  }, [badgeCounts.maintenance]);
 
   return (
     <View style={styles.container}>
@@ -1963,8 +2034,11 @@ const contentStyles = StyleSheet.create({
   screenTitle: { ...typography.h2, color: colors.text.primary },
   addButton: { backgroundColor: '#facc15', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: 8 },
   addButtonText: { ...typography.bodySmall, fontWeight: '600', color: colors.background },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', marginHorizontal: spacing.lg, marginBottom: spacing.md, backgroundColor: colors.surface, borderRadius: 10, paddingHorizontal: spacing.md, borderWidth: 1, borderColor: colors.border },
+  searchIcon: { marginRight: spacing.sm },
+  searchInput: { flex: 1, height: 40, ...typography.body, color: colors.text.primary },
   list: { padding: spacing.lg, paddingTop: 0 },
-  propertyCard: { marginBottom: spacing.md, backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#facc15' },
+  propertyCard: { marginBottom: spacing.md, backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#facc1566' },
   propertyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   propertyInfo: { flex: 1 },
   propertyName: { ...typography.h3, color: colors.text.primary },
@@ -2048,6 +2122,8 @@ const contentStyles = StyleSheet.create({
   copyButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, borderRadius: 8, borderWidth: 1, borderColor: '#facc15' },
   copyText: { ...typography.bodySmall, fontWeight: '600', color: '#facc15' },
   copyTextSuccess: { color: colors.success.main },
+  privacySection: { marginTop: spacing.lg, alignItems: 'center' },
+  privacyLink: { ...typography.bodySmall, color: colors.text.secondary, textDecorationLine: 'underline' },
   signOutSection: { marginTop: spacing.xl },
   footer: { ...typography.caption, color: colors.text.secondary, textAlign: 'center', marginTop: spacing.sm },
   versionText: { ...typography.caption, color: colors.text.secondary, textAlign: 'center', marginTop: spacing.xxl },

@@ -42,7 +42,7 @@ export default function TenantDetailScreen() {
 
   const [leaseModalVisible, setLeaseModalVisible] = useState(false);
 
-  const { data: tenant, refetch } = useQuery<TenantWithDetails>({
+  const { data: tenant, refetch, isError, error } = useQuery<TenantWithDetails>({
     queryKey: ['tenant', id],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -248,25 +248,19 @@ export default function TenantDetailScreen() {
   };
 
   const uploadLease = useMutation({
-    mutationFn: async (imageUri: string) => {
-      const fileName = `lease-${id}-${Date.now()}.jpg`;
+    mutationFn: async ({ uri, mimeType }: { uri: string; mimeType: string }) => {
+      const ext = mimeType === 'application/pdf' ? 'pdf' : 'jpg';
+      const fileName = `lease-${id}-${Date.now()}.${ext}`;
 
-      const base64 = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: 'base64',
-      });
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
 
       const { error: uploadError } = await supabase.storage
         .from('property-images')
-        .upload(fileName, decode(base64), {
-          contentType: 'image/jpeg',
-          upsert: true,
-        });
+        .upload(fileName, decode(base64), { contentType: mimeType, upsert: true });
 
       if (uploadError) throw uploadError;
 
-      const { data: urlData } = supabase.storage
-        .from('property-images')
-        .getPublicUrl(fileName);
+      const { data: urlData } = supabase.storage.from('property-images').getPublicUrl(fileName);
 
       const { error: updateError } = await supabase
         .from('tenants')
@@ -275,6 +269,7 @@ export default function TenantDetailScreen() {
 
       if (updateError) throw updateError;
     },
+
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tenant', id] });
     },
@@ -284,21 +279,17 @@ export default function TenantDetailScreen() {
   });
 
   const handlePickLeaseImage = async () => {
-    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-
-    if (!permissionResult.granted) {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
       Alert.alert(t.properties.permissionRequired, t.properties.permissionMessage);
       return;
     }
-
-    const result = await ImagePicker.launchCameraAsync({
+    const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: false,
       quality: 0.85,
     });
-
     if (!result.canceled && result.assets[0]) {
-      uploadLease.mutate(result.assets[0].uri);
+      uploadLease.mutate({ uri: result.assets[0].uri, mimeType: 'image/jpeg' });
     }
   };
 
@@ -320,6 +311,22 @@ export default function TenantDetailScreen() {
     await refetch();
     setRefreshing(false);
   };
+
+  if (isError) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Text style={styles.backButton}>{t.common.back}</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.loading}>
+          <Text style={[styles.loadingText, { color: colors.error.main }]}>Error loading tenant</Text>
+          <Text style={[styles.loadingText, { fontSize: 12, marginTop: 8 }]}>{(error as any)?.message}</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!tenant) {
     return (
@@ -490,31 +497,45 @@ export default function TenantDetailScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t.tenantDetail.leaseDocument}</Text>
           <Card padding="none" style={styles.leaseCard}>
-            {(tenant as any).lease_image_url ? (
-              <>
-                <TouchableOpacity onPress={() => setLeaseModalVisible(true)}>
-                  <Image
-                    source={{ uri: (tenant as any).lease_image_url }}
-                    style={styles.leaseThumbnail}
-                    resizeMode="cover"
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.leaseUploadButton}
-                  onPress={handlePickLeaseImage}
-                  disabled={uploadLease.isPending}
-                >
-                  {uploadLease.isPending ? (
-                    <ActivityIndicator size="small" color={colors.yellow} />
+            {(tenant as any).lease_image_url ? (() => {
+              const isPdf = (tenant as any).lease_image_url?.toLowerCase().includes('.pdf');
+              return (
+                <>
+                  {isPdf ? (
+                    <TouchableOpacity
+                      style={styles.leasePdfPreview}
+                      onPress={() => Linking.openURL((tenant as any).lease_image_url)}
+                    >
+                      <Feather name="file-text" size={36} color={colors.yellow} />
+                      <Text style={styles.leasePdfName}>lease.pdf</Text>
+                      <Text style={styles.leasePdfOpen}>{t.tenantDetail.uploadLease ? 'Tap to open' : 'Tap to open'}</Text>
+                    </TouchableOpacity>
                   ) : (
-                    <>
-                      <Feather name="upload" size={14} color={colors.yellow} />
-                      <Text style={styles.leaseUploadText}>{t.tenantDetail.changeLeaseImage}</Text>
-                    </>
+                    <TouchableOpacity onPress={() => setLeaseModalVisible(true)}>
+                      <Image
+                        source={{ uri: (tenant as any).lease_image_url }}
+                        style={styles.leaseThumbnail}
+                        resizeMode="cover"
+                      />
+                    </TouchableOpacity>
                   )}
-                </TouchableOpacity>
-              </>
-            ) : (
+                  <TouchableOpacity
+                    style={styles.leaseUploadButton}
+                    onPress={handlePickLeaseImage}
+                    disabled={uploadLease.isPending}
+                  >
+                    {uploadLease.isPending ? (
+                      <ActivityIndicator size="small" color={colors.yellow} />
+                    ) : (
+                      <>
+                        <Feather name="upload" size={14} color={colors.yellow} />
+                        <Text style={styles.leaseUploadText}>{t.tenantDetail.changeLeaseImage}</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              );
+            })() : (
               <TouchableOpacity
                 style={styles.leaseEmptyState}
                 onPress={handlePickLeaseImage}
@@ -548,7 +569,7 @@ export default function TenantDetailScreen() {
             >
               <Feather name="x" size={24} color={colors.white} />
             </TouchableOpacity>
-            {(tenant as any).lease_image_url && (
+            {(tenant as any).lease_image_url && !(tenant as any).lease_image_url?.toLowerCase().includes('.pdf') && (
               <Image
                 source={{ uri: (tenant as any).lease_image_url }}
                 style={styles.modalImage}
@@ -933,6 +954,21 @@ const styles = StyleSheet.create({
   leaseThumbnail: {
     width: '100%',
     height: 200,
+  },
+  leasePdfPreview: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.lg,
+    gap: spacing.xs,
+  },
+  leasePdfName: {
+    ...typography.body,
+    color: colors.text.primary,
+    fontWeight: '600',
+  },
+  leasePdfOpen: {
+    ...typography.caption,
+    color: colors.yellow,
   },
   leaseUploadButton: {
     flexDirection: 'row',

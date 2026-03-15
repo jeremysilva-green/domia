@@ -253,6 +253,16 @@ export default function OwnersListScreen() {
     });
 
   const handleSendRequest = (property: PropertyItem) => {
+    const activeConnection = existingRequests.find((r) => r.status === 'approved');
+    if (activeConnection) {
+      setDialog({
+        title: t.owners.alreadyConnectedTitle,
+        message: t.owners.alreadyConnectedMsg,
+        confirmText: 'OK',
+        onConfirm: () => setDialog(null),
+      });
+      return;
+    }
     setDialog({
       title: t.owners.sendRequest,
       message: `${t.owners.sendRequestConfirm} ${property.name}?`,
@@ -287,14 +297,10 @@ export default function OwnersListScreen() {
             <Text style={styles.pendingText}>{t.owners.pending}</Text>
           </View>
         ) : status === 'approved' && request ? (
-          <TouchableOpacity
-            style={styles.disconnectButton}
-            onPress={() => handleDisconnect(request)}
-            disabled={disconnectMutation.isPending}
-          >
-            <Feather name="log-out" size={13} color={colors.error.main} />
-            <Text style={styles.disconnectText}>{t.tenantHome.disconnectConfirm}</Text>
-          </TouchableOpacity>
+          <View style={styles.connectedBadge}>
+            <Feather name="check-circle" size={13} color="#22c55e" />
+            <Text style={styles.connectedText}>{t.owners.connected}</Text>
+          </View>
         ) : status === 'rejected' ? (
           <Button
             title={t.owners.tryAgain}
@@ -508,6 +514,20 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontWeight: '600',
     color: colors.error.main,
+  },
+  connectedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    backgroundColor: '#16a34a22',
+    borderRadius: 20,
+  },
+  connectedText: {
+    ...typography.caption,
+    fontWeight: '600',
+    color: '#22c55e',
   },
   emptyState: {
     alignItems: 'center',

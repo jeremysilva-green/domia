@@ -263,6 +263,7 @@ export const en = {
     app: 'App',
     version: 'Version',
     footer: 'Domia - Property Management',
+    privacyPolicy: 'Privacy Policy',
     deleteAccount: 'Delete Account',
     deleteAccountWarningTitle: 'Before You Delete',
     deleteAccountWarningBody: 'Deleting your account does not cancel your Google Play subscription. To avoid future charges, please cancel your subscription in Google Play first.',
@@ -321,6 +322,8 @@ export const en = {
     requestSentMsg: 'Your connection request has been sent. You will be notified when the owner responds.',
     alreadyRequested: 'Already Requested',
     alreadyRequestedMsg: 'You have already sent a request to this owner.',
+    alreadyConnectedTitle: 'Already Connected',
+    alreadyConnectedMsg: 'You are already connected to a property. You must request a disconnection from your current property before connecting to a new one.',
   },
 
   // Tenant Home
@@ -531,6 +534,7 @@ export const en = {
     pendingConfirmation: 'Pending',
     accumulatedFine: 'Fine',
     uploadProof: 'Upload Proof',
+    utilities: 'Utilities',
     proofUploaded: 'Proof sent · awaiting confirmation',
     markPaid: 'Mark Paid',
     dueOn: 'Due',

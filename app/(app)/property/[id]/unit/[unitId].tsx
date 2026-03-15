@@ -37,8 +37,7 @@ export default function UnitDetailScreen() {
   const [editUnitNumber, setEditUnitNumber] = useState('');
   const [editRentAmount, setEditRentAmount] = useState('');
   const [editCurrency, setEditCurrency] = useState<Currency>('USD');
-  const [editBedrooms, setEditBedrooms] = useState('');
-  const [editBathrooms, setEditBathrooms] = useState('');
+  const [editFineAmount, setEditFineAmount] = useState('');
 
   const { data: unit, refetch } = useQuery({
     queryKey: ['unit', unitId],
@@ -105,8 +104,7 @@ export default function UnitDetailScreen() {
       setEditUnitNumber(unit.unit_number || '');
       setEditRentAmount(unit.rent_amount?.toString() || '');
       setEditCurrency((unit.currency as Currency) || 'USD');
-      setEditBedrooms(unit.bedrooms?.toString() || '1');
-      setEditBathrooms(unit.bathrooms?.toString() || '1');
+      setEditFineAmount((unit as any).fine_amount?.toString() || '');
     }
   }, [unit]);
 
@@ -118,8 +116,7 @@ export default function UnitDetailScreen() {
           unit_number: editUnitNumber.trim(),
           rent_amount: parseFloat(editRentAmount),
           currency: editCurrency,
-          bedrooms: parseInt(editBedrooms) || 1,
-          bathrooms: parseFloat(editBathrooms) || 1,
+          fine_amount: editFineAmount.trim() ? parseFloat(editFineAmount) : null,
         })
         .eq('id', unitId);
 
@@ -191,8 +188,7 @@ export default function UnitDetailScreen() {
       setEditUnitNumber(unit.unit_number || '');
       setEditRentAmount(unit.rent_amount?.toString() || '');
       setEditCurrency((unit.currency as Currency) || 'USD');
-      setEditBedrooms(unit.bedrooms?.toString() || '1');
-      setEditBathrooms(unit.bathrooms?.toString() || '1');
+      setEditFineAmount((unit as any).fine_amount?.toString() || '');
     }
     setIsEditing(false);
   };
@@ -272,20 +268,15 @@ export default function UnitDetailScreen() {
               />
 
               <Input
-                label={t.units.bedrooms}
-                placeholder="1"
-                value={editBedrooms}
-                onChangeText={setEditBedrooms}
-                keyboardType="number-pad"
-              />
-
-              <Input
-                label={t.units.bathrooms}
-                placeholder="1"
-                value={editBathrooms}
-                onChangeText={setEditBathrooms}
+                label={t.units.fineAmount}
+                labelStyle={{ color: colors.error.main }}
+                placeholder="0"
+                value={editFineAmount}
+                onChangeText={setEditFineAmount}
                 keyboardType="decimal-pad"
               />
+              <Text style={styles.fineHint}>{t.units.fineGraceNote}</Text>
+
             </Card>
 
             <Button
@@ -311,14 +302,17 @@ export default function UnitDetailScreen() {
                   {currencySymbol}{unit.rent_amount?.toLocaleString() || '0'}
                 </Text>
               </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>{t.units.bedrooms}</Text>
-                <Text style={styles.detailValue}>{unit.bedrooms || 1}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>{t.units.bathrooms}</Text>
-                <Text style={styles.detailValue}>{unit.bathrooms || 1}</Text>
-              </View>
+              {(unit as any).fine_amount != null && (
+                <View style={styles.detailRow}>
+                  <Text style={[styles.detailLabel, { color: colors.error.main }]}>{t.units.fineAmount}</Text>
+                  <View style={styles.fineValueRow}>
+                    <Text style={[styles.detailValue, { color: colors.error.main }]}>
+                      {currencySymbol}{(unit as any).fine_amount?.toLocaleString()}
+                    </Text>
+                    <Text style={styles.fineTag}>{t.units.finePerDay}</Text>
+                  </View>
+                </View>
+              )}
               <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
                 <Text style={styles.detailLabel}>{t.units.status}</Text>
                 <Text
@@ -789,6 +783,26 @@ const styles = StyleSheet.create({
   deleteConfirmText: {
     ...typography.body,
     color: colors.error.main,
+    fontWeight: '600',
+  },
+  fineHint: {
+    ...typography.caption,
+    color: colors.text.secondary,
+    marginBottom: spacing.md,
+    marginTop: -spacing.xs,
+  },
+  fineValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  fineTag: {
+    ...typography.caption,
+    color: colors.error.main,
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
     fontWeight: '600',
   },
 });

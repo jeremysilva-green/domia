@@ -92,7 +92,7 @@ export default function TenantTabsLayout() {
         options={{
           title: t.nav.home,
           tabBarIcon: ({ color }) => (
-            <Feather name="home" size={35} color={color} />
+            <Feather name="home" size={28} color={color} />
           ),
         }}
       />
@@ -101,7 +101,7 @@ export default function TenantTabsLayout() {
         options={{
           title: t.nav.owners,
           tabBarIcon: ({ color }) => (
-            <Feather name="users" size={35} color={color} />
+            <Feather name="users" size={28} color={color} />
           ),
         }}
       />
@@ -110,7 +110,7 @@ export default function TenantTabsLayout() {
         options={{
           title: t.nav.requests,
           tabBarIcon: ({ color }) => (
-            <Feather name="tool" size={35} color={color} />
+            <Feather name="tool" size={28} color={color} />
           ),
         }}
       />
@@ -119,7 +119,7 @@ export default function TenantTabsLayout() {
         options={{
           title: t.nav.inbox,
           tabBarIcon: ({ color }) => (
-            <Feather name="bell" size={35} color={color} />
+            <Feather name="bell" size={28} color={color} />
           ),
           tabBarBadge: (inboxCount && badgeActive) ? inboxCount : undefined,
           tabBarBadgeStyle: { backgroundColor: colors.error.main, fontSize: 10 },
@@ -130,7 +130,7 @@ export default function TenantTabsLayout() {
         options={{
           title: t.nav.settings,
           tabBarIcon: ({ color }) => (
-            <Feather name="settings" size={35} color={color} />
+            <Feather name="settings" size={28} color={color} />
           ),
         }}
       />

@@ -58,24 +58,37 @@ const REGION_TO_CALLING_CODE: Record<string, string> = {
 
 /**
  * Returns the international calling code for the device's region.
- * Falls back to '+1' if the region cannot be determined.
+ * Skips US/CA (+1) since most users of this app are in Latin America —
+ * falls back to '+595' (Paraguay) for those devices.
  */
 export function getDeviceCallingCode(): string {
   try {
     const locales = getLocales();
     const regionCode = locales[0]?.regionCode;
     if (regionCode && REGION_TO_CALLING_CODE[regionCode]) {
-      return REGION_TO_CALLING_CODE[regionCode];
+      const code = REGION_TO_CALLING_CODE[regionCode];
+      // Skip generic +1 (US/CA) — app is primarily used in Paraguay
+      if (code !== '+1') return code;
     }
   } catch {}
   return '+595';
 }
 
+/** Returns true if the string is only a calling code with no subscriber digits. */
+function isBareCallingCode(phone: string): boolean {
+  const trimmed = phone.trim();
+  // Matches strings like "+1", "+595", "+1 ", etc. — a + followed by only digits/spaces
+  return /^\+\d[\d\s]*$/.test(trimmed) && trimmed.replace(/[\s+]/g, '').length <= 4;
+}
+
 /**
- * Returns a phone value pre-filled with the device calling code,
- * but only if the existing value is empty.
+ * Returns a phone value pre-filled with the device calling code.
+ * If the existing value is empty or just a bare calling code (no subscriber number),
+ * it re-detects the calling code from the device locale.
  */
 export function prefillPhone(existingPhone?: string | null): string {
-  if (existingPhone && existingPhone.trim()) return existingPhone;
+  if (existingPhone && existingPhone.trim() && !isBareCallingCode(existingPhone)) {
+    return existingPhone;
+  }
   return getDeviceCallingCode();
 }

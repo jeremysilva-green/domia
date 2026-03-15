@@ -7,6 +7,7 @@ import {
   TextInputProps,
   TouchableOpacity,
   ViewStyle,
+  TextStyle,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../constants/theme';
 
@@ -17,6 +18,7 @@ interface InputProps extends Omit<TextInputProps, 'style'> {
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
   containerStyle?: ViewStyle;
+  labelStyle?: TextStyle;
 }
 
 export function Input({
@@ -26,6 +28,7 @@ export function Input({
   leftIcon,
   rightIcon,
   containerStyle,
+  labelStyle,
   secureTextEntry,
   ...props
 }: InputProps) {
@@ -36,7 +39,7 @@ export function Input({
 
   return (
     <View style={[styles.container, containerStyle]}>
-      {label && <Text style={styles.label}>{label}</Text>}
+      {label && <Text style={[styles.label, labelStyle]}>{label}</Text>}
 
       <View
         style={[

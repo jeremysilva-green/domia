@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, ScrollView, RefreshControl, Alert, Image, Touch
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '../../../src/stores/authStore';
@@ -12,6 +12,13 @@ import * as ImagePicker from 'expo-image-picker';
 import { decode } from 'base64-arraybuffer';
 import { colors, spacing, typography } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
+import { playSound } from '../../../src/utils/sounds';
+import {
+  schedulePaymentReminders,
+  cancelPaymentReminders,
+  requestNotificationPermissions,
+  setupNotificationChannels,
+} from '../../../src/utils/notificationScheduler';
 
 export default function TenantHomeScreen() {
   const { t } = useI18n();
@@ -21,6 +28,7 @@ export default function TenantHomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [leaseModalVisible, setLeaseModalVisible] = useState(false);
   const [proofModalVisible, setProofModalVisible] = useState(false);
+  const [servicesProofModalVisible, setServicesProofModalVisible] = useState(false);
   const [disconnectModalVisible, setDisconnectModalVisible] = useState(false);
   const [disconnectReason, setDisconnectReason] = useState('');
   const [dialog, setDialog] = useState<{ title: string; message: string; confirmText: string; destructive?: boolean; onConfirm: () => void } | null>(null);
@@ -149,7 +157,7 @@ export default function TenantHomeScreen() {
   // Upload proof of payment image
   const uploadProofMutation = useMutation({
     mutationFn: async () => {
-      if (!currentPayment) throw new Error('No payment record');
+      if (!user?.id) throw new Error('Not authenticated');
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission needed', 'Please allow access to your photo library.');
@@ -162,8 +170,29 @@ export default function TenantHomeScreen() {
       });
       if (result.canceled || !result.assets?.[0]) return;
       const asset = result.assets[0];
+
+      // Auto-create a payment row for the current month if one doesn't exist yet
+      let paymentId = currentPayment?.id;
+      if (!paymentId) {
+        const now = new Date();
+        const { data: newPayment, error: insertError } = await supabase
+          .from('rent_payments')
+          .insert({
+            tenant_id: user.id,
+            period_month: now.getMonth() + 1,
+            period_year: now.getFullYear(),
+            amount_due: 0,
+            due_date: now.toISOString().split('T')[0],
+            status: 'due',
+          })
+          .select('id')
+          .single();
+        if (insertError) throw insertError;
+        paymentId = newPayment.id;
+      }
+
       const ext = asset.uri.split('.').pop() ?? 'jpg';
-      const filePath = `${user!.id}/${currentPayment.id}.${ext}`;
+      const filePath = `${user.id}/${paymentId}.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from('payment-proofs')
         .upload(filePath, decode(asset.base64!), { contentType: `image/${ext}`, upsert: true });
@@ -171,13 +200,112 @@ export default function TenantHomeScreen() {
       const { data: { publicUrl } } = supabase.storage.from('payment-proofs').getPublicUrl(filePath);
       const { error } = await supabase
         .from('rent_payments')
-        .update({ proof_image_url: publicUrl })
-        .eq('id', currentPayment.id);
+        .update({ proof_image_url: publicUrl, proof_seen_by_owner: false })
+        .eq('id', paymentId);
       if (error) throw error;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tenant-current-payment', user?.id] }),
+    onSuccess: () => {
+      playSound('notification');
+      queryClient.invalidateQueries({ queryKey: ['tenant-current-payment', user?.id] });
+    },
     onError: (err: any) => Alert.alert('Error', err.message),
   });
+
+  const uploadServicesProofMutation = useMutation({
+    mutationFn: async () => {
+      if (!user?.id) throw new Error('Not authenticated');
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please allow access to your photo library.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+        base64: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+
+      // Reuse or create the payment row for the current month
+      let paymentId = currentPayment?.id;
+      if (!paymentId) {
+        const now = new Date();
+        const { data: newPayment, error: insertError } = await supabase
+          .from('rent_payments')
+          .insert({
+            tenant_id: user.id,
+            period_month: now.getMonth() + 1,
+            period_year: now.getFullYear(),
+            amount_due: 0,
+            due_date: now.toISOString().split('T')[0],
+            status: 'due',
+          })
+          .select('id')
+          .single();
+        if (insertError) throw insertError;
+        paymentId = newPayment.id;
+      }
+
+      const ext = asset.uri.split('.').pop() ?? 'jpg';
+      const filePath = `${user.id}/services_${paymentId}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('payment-proofs')
+        .upload(filePath, decode(asset.base64!), { contentType: `image/${ext}`, upsert: true });
+      if (uploadError) throw uploadError;
+      const { data: { publicUrl } } = supabase.storage.from('payment-proofs').getPublicUrl(filePath);
+      const { error } = await supabase
+        .from('rent_payments')
+        .update({ services_proof_image_url: publicUrl, services_proof_seen_by_owner: false } as any)
+        .eq('id', paymentId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      playSound('notification');
+      queryClient.invalidateQueries({ queryKey: ['tenant-current-payment', user?.id] });
+    },
+    onError: (err: any) => Alert.alert('Error', err.message),
+  });
+
+  // Set up notification channels once on mount
+  useEffect(() => {
+    setupNotificationChannels();
+    requestNotificationPermissions();
+  }, []);
+
+  // Play in-app sounds + schedule background notifications for due dates
+  const soundPlayedForPayment = useRef<string | null>(null);
+  useEffect(() => {
+    if (!currentPayment || currentPayment.status === 'paid' || currentPayment.proof_image_url) {
+      // Payment is paid — cancel any pending reminders
+      if (currentPayment?.status === 'paid') cancelPaymentReminders();
+      return;
+    }
+    // Avoid replaying the same payment's sound on every re-render
+    if (soundPlayedForPayment.current === currentPayment.id) return;
+
+    const today = new Date();
+    const dueDate = new Date(currentPayment.due_date);
+    const daysSinceDue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+    const daysInMora = Math.max(0, daysSinceDue - 3);
+
+    if (daysInMora > 0) {
+      playSound('passedDueDate');
+      soundPlayedForPayment.current = currentPayment.id;
+    } else if (daysSinceDue === 0) {
+      playSound('dueDate');
+      soundPlayedForPayment.current = currentPayment.id;
+    }
+
+    // Schedule background notifications (fires at 9 AM on due date and 4 days after)
+    schedulePaymentReminders(
+      currentPayment.id,
+      currentPayment.due_date,
+      '🏠 Domia',
+      'Tu pago de alquiler vence hoy.',
+      'Tu pago está atrasado. Se están acumulando moras.',
+    );
+  }, [currentPayment]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -413,48 +541,70 @@ export default function TenantHomeScreen() {
               </View>
             </Card>
 
-            {currentPayment && (
+            {isConnected && (
               <Card style={styles.pagosCard}>
-                <View style={styles.pagosHeader}>
-                  <View style={styles.pagosTitleRow}>
-                    <Feather name="credit-card" size={18} color={colors.yellow} />
-                    <Text style={styles.pagosTitleText}>{t.payments.title}</Text>
+                <View style={styles.pagosRow}>
+                  {/* Payments column */}
+                  <View style={styles.pagosColumn}>
+                    <View style={styles.pagosTitleRow}>
+                      <Feather name="credit-card" size={16} color={colors.yellow} />
+                      <Text style={styles.pagosTitleText}>{t.payments.title}</Text>
+                    </View>
+                    {currentPayment?.status === 'paid' ? (
+                      <Badge label={t.payments.alDia} variant="success" size="sm" />
+                    ) : currentPayment?.proof_image_url ? (
+                      <Badge label={t.payments.pendingConfirmation} variant="warning" size="sm" />
+                    ) : moraData ? (
+                      <Badge label={`${t.payments.mora} · ${moraData.daysInMora}d`} variant="error" size="sm" />
+                    ) : null}
+                    {currentPayment?.status !== 'paid' && (
+                      currentPayment?.proof_image_url ? (
+                        <TouchableOpacity onPress={() => setProofModalVisible(true)} style={styles.pagosProofRow}>
+                          <Feather name="check-circle" size={14} color={colors.warning.main} />
+                          <Text style={styles.pagosProofText}>{t.payments.proofUploaded}</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <Button
+                          title={t.payments.uploadProof}
+                          variant="outline"
+                          size="sm"
+                          onPress={() => uploadProofMutation.mutate()}
+                          loading={uploadProofMutation.isPending}
+                          style={styles.pagosUploadBtn}
+                        />
+                      )
+                    )}
                   </View>
-                  {currentPayment.status === 'paid' ? (
-                    <Badge label={t.payments.alDia} variant="success" size="sm" />
-                  ) : currentPayment.proof_image_url ? (
-                    <Badge label={t.payments.pendingConfirmation} variant="warning" size="sm" />
-                  ) : moraData ? (
-                    <Badge label={`${t.payments.mora} · ${moraData.daysInMora}d`} variant="error" size="sm" />
-                  ) : (
-                    <Badge label={t.payments.alDia} variant="success" size="sm" />
-                  )}
+
+                  {/* Vertical divider */}
+                  <View style={styles.pagosVerticalDivider} />
+
+                  {/* Servicios column */}
+                  <View style={styles.pagosColumn}>
+                    <View style={styles.pagosTitleRow}>
+                      <Feather name="droplet" size={16} color={colors.yellow} />
+                      <Text style={styles.pagosTitleText}>{t.payments.utilities}</Text>
+                    </View>
+                    {(currentPayment as any)?.services_proof_image_url && (
+                      <Badge label={t.payments.pendingConfirmation} variant="warning" size="sm" />
+                    )}
+                    {(currentPayment as any)?.services_proof_image_url ? (
+                      <TouchableOpacity onPress={() => setServicesProofModalVisible(true)} style={styles.pagosProofRow}>
+                        <Feather name="check-circle" size={14} color={colors.warning.main} />
+                        <Text style={styles.pagosProofText}>{t.payments.proofUploaded}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Button
+                        title={t.payments.uploadProof}
+                        variant="outline"
+                        size="sm"
+                        onPress={() => uploadServicesProofMutation.mutate()}
+                        loading={uploadServicesProofMutation.isPending}
+                        style={styles.pagosUploadBtn}
+                      />
+                    )}
+                  </View>
                 </View>
-                <Text style={styles.pagosDate}>
-                  {t.payments.dueOn} {new Date(currentPayment.due_date).toLocaleDateString()} · {currentPayment.amount_due?.toLocaleString()}
-                </Text>
-                {moraData && moraData.finePerDay > 0 && (
-                  <Text style={styles.pagosFineLine}>
-                    {t.payments.accumulatedFine}: {moraData.accumulatedFine?.toLocaleString()}
-                  </Text>
-                )}
-                {currentPayment.status !== 'paid' && (
-                  currentPayment.proof_image_url ? (
-                    <TouchableOpacity onPress={() => setProofModalVisible(true)} style={styles.pagosProofRow}>
-                      <Feather name="check-circle" size={15} color={colors.warning.main} />
-                      <Text style={styles.pagosProofText}>{t.payments.proofUploaded}</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <Button
-                      title={t.payments.uploadProof}
-                      variant="outline"
-                      size="sm"
-                      onPress={() => uploadProofMutation.mutate()}
-                      loading={uploadProofMutation.isPending}
-                      style={styles.pagosUploadBtn}
-                    />
-                  )
-                )}
               </Card>
             )}
 
@@ -618,6 +768,30 @@ export default function TenantHomeScreen() {
           {currentPayment?.proof_image_url && (
             <Image
               source={{ uri: currentPayment.proof_image_url }}
+              style={styles.modalImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
+
+      {/* Services Proof Image Modal */}
+      <Modal
+        visible={servicesProofModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setServicesProofModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalClose}
+            onPress={() => setServicesProofModalVisible(false)}
+          >
+            <Feather name="x" size={24} color={colors.white} />
+          </TouchableOpacity>
+          {(currentPayment as any)?.services_proof_image_url && (
+            <Image
+              source={{ uri: (currentPayment as any).services_proof_image_url }}
               style={styles.modalImage}
               resizeMode="contain"
             />
@@ -842,6 +1016,7 @@ const styles = StyleSheet.create({
   ownerLabel: {
     ...typography.caption,
     color: 'rgba(255,255,255,0.6)',
+    paddingLeft: 40,
   },
   ownerNameRow: {
     flexDirection: 'row',
@@ -1109,6 +1284,19 @@ const styles = StyleSheet.create({
   pagosUploadBtn: {
     marginTop: spacing.sm,
     alignSelf: 'flex-start',
+  },
+  pagosRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  pagosColumn: {
+    flex: 1,
+  },
+  pagosVerticalDivider: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginHorizontal: spacing.md,
+    alignSelf: 'stretch',
   },
   disconnectModalOverlay: {
     flex: 1,
