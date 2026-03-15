@@ -23,7 +23,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.domus.app",
-      "versionCode": 22,
+      "versionCode": 23,
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
