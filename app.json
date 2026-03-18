@@ -23,7 +23,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.domia.propertyapp",
-      "versionCode": 25,
+      "versionCode": 26,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "com.android.vending.BILLING"
@@ -57,7 +57,16 @@
       ],
       "expo-localization",
       "react-native-iap",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

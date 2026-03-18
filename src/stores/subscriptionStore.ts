@@ -13,9 +13,9 @@ import { supabase } from '../services/supabase';
 
 // ─── Product IDs — replace with your Google Play Console subscription IDs ────
 export const PLAN_PRODUCT_IDS = {
-  '1-10':  'domus_10_monthly',   // $10/month — up to 10 units
-  '10-30': 'domus_25_monthly',   // $25/month — up to 30 units
-  '30-50': 'domus_45_monthly',   // $45/month — Unlimited
+  '1-10':  'domia_10_monthly',   // $10/month — up to 10 units
+  '10-30': 'domia_25_monthly',   // $25/month — up to 30 units
+  '30-50': 'domia_45_monthly',   // $45/month — Unlimited
 } as const;
 
 export type PlanType = keyof typeof PLAN_PRODUCT_IDS;
