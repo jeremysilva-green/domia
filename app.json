@@ -23,7 +23,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.domia.propertyapp",
-      "versionCode": 28,
+      "versionCode": 29,
       "permissions": [
         "com.android.vending.BILLING"
       ]
@@ -58,6 +58,7 @@
       "expo-localization",
       "react-native-iap",
       "expo-font",
+      "./plugins/removePermissions",
       [
         "expo-build-properties",
         {
