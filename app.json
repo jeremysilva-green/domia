@@ -23,9 +23,8 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.domia.propertyapp",
-      "versionCode": 27,
+      "versionCode": 28,
       "permissions": [
-        "android.permission.RECORD_AUDIO",
         "com.android.vending.BILLING"
       ]
     },
