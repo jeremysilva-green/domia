@@ -1,17 +1,16 @@
 /**
- * Subscription store using react-native-iap for Google Play Billing.
+ * Subscription store using react-native-iap v14 for Google Play Billing.
  *
- * IMPORTANT: react-native-iap requires a native build.
- * Run: npx expo install react-native-iap
- * Then create a new EAS development build before testing billing on device.
- *
- * Replace the PRODUCT_IDS below with your actual Google Play Console product IDs.
+ * v14 API changes from v12/v13:
+ *  - requestSubscription() removed → use requestPurchase({ type: 'subs', request: { google: { skus, subscriptionOffers } } })
+ *  - getSubscriptions() removed     → use fetchProducts({ skus, type: 'subs' })
+ *  - Android subscriptions require an offerToken fetched from fetchProducts first
  */
 import { create } from 'zustand';
 import { Alert } from 'react-native';
 import { supabase } from '../services/supabase';
 
-// ─── Product IDs — replace with your Google Play Console subscription IDs ────
+// ─── Product IDs — must match Google Play Console subscription IDs ────────────
 export const PLAN_PRODUCT_IDS = {
   '1-10':  'domia_10_monthly',   // $10/month — up to 10 units
   '10-30': 'domia_25_monthly',   // $25/month — up to 30 units
@@ -67,7 +66,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
 
   initConnection: async () => {
     const RNIap = await getRNIap();
-    if (!RNIap) return; // native module not available yet
+    if (!RNIap) return;
     try {
       await RNIap.initConnection();
       set({ isConnected: true });
@@ -79,10 +78,9 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
   purchasePlan: async (planType, onSuccess, onError) => {
     const RNIap = await getRNIap();
     if (!RNIap) {
-      // Native module not available — show placeholder in dev
       Alert.alert(
         'Billing unavailable',
-        'Google Play Billing requires a native build. Run: npx expo install react-native-iap, then build with EAS.',
+        'Google Play Billing requires a native build.',
       );
       return;
     }
@@ -94,16 +92,22 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
     set({ isPurchasing: true });
     try {
       const sku = PLAN_PRODUCT_IDS[planType];
-      await RNIap.requestSubscription({ sku });
 
-      // Listen for purchase confirmation
-      const purchaseListener = RNIap.purchaseUpdatedListener(async (purchase) => {
+      // v14: fetch the subscription to get the offerToken required by Play Billing v5+
+      const products = await RNIap.fetchProducts({ skus: [sku], type: 'subs' });
+      const product = products[0] as any;
+
+      // offerToken lives inside subscriptionOfferDetails (Android Play Billing v5+)
+      const offerToken: string | undefined =
+        product?.subscriptionOfferDetails?.[0]?.offerToken ?? undefined;
+
+      // Set up listeners before triggering the purchase dialog
+      const purchaseListener = RNIap.purchaseUpdatedListener(async (purchase: any) => {
         if (purchase.productId === sku) {
           try {
             await RNIap.finishTransaction({ purchase, isConsumable: false });
           } catch {}
 
-          // Send purchase token to backend for verification
           const purchaseToken = purchase.purchaseToken;
           if (purchaseToken) {
             try {
@@ -114,29 +118,43 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
               });
               if (verifyError) {
                 purchaseListener.remove();
+                errorListener.remove();
                 set({ isPurchasing: false });
                 onError('Purchase verification failed. Please contact support.');
                 return;
               }
             } catch (verifyErr: any) {
               console.warn('Purchase verification error:', verifyErr?.message);
-              // Non-blocking: allow success even if verification fails (handled server-side)
             }
           }
 
           purchaseListener.remove();
+          errorListener.remove();
           set({ isPurchasing: false });
           onSuccess();
         }
       });
 
-      const errorListener = RNIap.purchaseErrorListener((error) => {
+      const errorListener = RNIap.purchaseErrorListener((error: any) => {
         if (error.productId === sku) {
+          purchaseListener.remove();
           errorListener.remove();
           set({ isPurchasing: false });
           onError(error.message || 'Purchase failed');
         }
       });
+
+      // v14: requestPurchase with nested google/android request format
+      await RNIap.requestPurchase({
+        type: 'subs',
+        request: {
+          google: {
+            skus: [sku],
+            ...(offerToken ? { subscriptionOffers: [{ sku, offerToken }] } : {}),
+          },
+        },
+      } as any);
+
     } catch (e: any) {
       set({ isPurchasing: false });
       onError(e?.message || 'Purchase failed');
