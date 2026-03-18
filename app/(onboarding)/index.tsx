@@ -41,7 +41,7 @@ const GOAL_SHORT_KEYS: Record<GoalKey, string> = {
 export default function OnboardingScreen() {
   const router = useRouter();
   const { t } = useI18n();
-  const { owner, completeOnboarding } = useAuthStore();
+  const { owner, completeOnboarding, fetchOwnerProfile } = useAuthStore();
   const { initConnection, purchasePlan, isPurchasing } = useSubscriptionStore();
 
   const [step, setStep] = useState(1);
@@ -65,6 +65,15 @@ export default function OnboardingScreen() {
   useEffect(() => {
     initConnection();
   }, []);
+
+  // Navigate to app as soon as onboarding_completed is set in DB
+  // This fires whether navigation was triggered by the purchase listener
+  // or by the verify-purchase edge function updating owner state.
+  useEffect(() => {
+    if ((owner as any)?.onboarding_completed === true) {
+      router.replace('/(app)/(tabs)');
+    }
+  }, [owner]);
 
   const primaryGoal = selectedGoals[0];
   const primaryGoalShort =
@@ -164,14 +173,16 @@ export default function OnboardingScreen() {
     purchasePlan(
       selectedPlan,
       async () => {
-        // On success — save to DB and go to app
+        // On success — save to DB; the useEffect above handles navigation
         try {
           await completeOnboarding({
             displayName: owner?.full_name || '',
             planType: selectedPlan,
             productId: PLAN_PRODUCT_IDS[selectedPlan],
           });
-          router.replace('/(app)/(tabs)');
+          // fetchOwnerProfile is called inside completeOnboarding, but call
+          // it again explicitly here so the useEffect sees the updated state.
+          await fetchOwnerProfile();
         } catch (e: any) {
           Alert.alert('Error', e.message);
         }
