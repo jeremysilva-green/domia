@@ -23,7 +23,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.domia.propertyapp",
-      "versionCode": 26,
+      "versionCode": 27,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "com.android.vending.BILLING"
@@ -52,7 +52,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Domus to access your photos for maintenance requests."
+          "photosPermission": "Allow Domus to access your photos for maintenance requests.",
+          "cameraPermission": false
         }
       ],
       "expo-localization",
