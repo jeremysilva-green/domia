@@ -536,6 +536,7 @@ export const es: Translations = {
     pendingConfirmation: 'Pendiente',
     accumulatedFine: 'Multa acumulada',
     uploadProof: 'Subir comprobante',
+    proofSent: 'Enviado',
     utilities: 'Servicios',
     proofUploaded: 'Comprobante enviado · pendiente de confirmación',
     markPaid: 'Pagó',

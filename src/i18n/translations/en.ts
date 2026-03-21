@@ -534,6 +534,7 @@ export const en = {
     pendingConfirmation: 'Pending',
     accumulatedFine: 'Fine',
     uploadProof: 'Upload Proof',
+    proofSent: 'Sent',
     utilities: 'Utilities',
     proofUploaded: 'Proof sent · awaiting confirmation',
     markPaid: 'Mark Paid',

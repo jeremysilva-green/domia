@@ -142,6 +142,16 @@ export default function TenantHomeScreen() {
     enabled: !!user?.id && connectionRequest?.status === 'approved',
   });
 
+  // True when we're within 3 days of the NEXT due date — buttons reset to allow re-upload
+  const isProofWindowReset = useMemo(() => {
+    if (!currentPayment?.due_date) return false;
+    const nextDue = new Date(currentPayment.due_date);
+    nextDue.setMonth(nextDue.getMonth() + 1);
+    const resetDate = new Date(nextDue);
+    resetDate.setDate(resetDate.getDate() - 3);
+    return new Date() >= resetDate;
+  }, [currentPayment]);
+
   // Mora = days past (due_date + 3-day grace) with accumulated fine
   const moraData = useMemo(() => {
     if (!currentPayment) return null;
@@ -504,10 +514,10 @@ export default function TenantHomeScreen() {
                       <Badge label={`${t.payments.mora} · ${moraData.daysInMora}d`} variant="error" size="sm" />
                     ) : null}
                     {currentPayment?.status !== 'paid' && (
-                      currentPayment?.proof_image_url ? (
+                      currentPayment?.proof_image_url && !isProofWindowReset ? (
                         <TouchableOpacity onPress={() => setProofModalVisible(true)} style={styles.pagosProofRow}>
-                          <Feather name="check-circle" size={14} color={colors.warning.main} />
-                          <Text style={styles.pagosProofText}>{t.payments.proofUploaded}</Text>
+                          <Feather name="check-circle" size={14} color="#22c55e" />
+                          <Text style={[styles.pagosProofText, { color: '#22c55e' }]}>{t.payments.proofSent}</Text>
                         </TouchableOpacity>
                       ) : (
                         <Button
@@ -531,13 +541,13 @@ export default function TenantHomeScreen() {
                       <Feather name="droplet" size={16} color={colors.yellow} />
                       <Text style={styles.pagosTitleText}>{t.payments.utilities}</Text>
                     </View>
-                    {(currentPayment as any)?.services_proof_image_url && (
+                    {(currentPayment as any)?.services_proof_image_url && !isProofWindowReset && (
                       <Badge label={t.payments.pendingConfirmation} variant="warning" size="sm" />
                     )}
-                    {(currentPayment as any)?.services_proof_image_url ? (
+                    {(currentPayment as any)?.services_proof_image_url && !isProofWindowReset ? (
                       <TouchableOpacity onPress={() => setServicesProofModalVisible(true)} style={styles.pagosProofRow}>
-                        <Feather name="check-circle" size={14} color={colors.warning.main} />
-                        <Text style={styles.pagosProofText}>{t.payments.proofUploaded}</Text>
+                        <Feather name="check-circle" size={14} color="#22c55e" />
+                        <Text style={[styles.pagosProofText, { color: '#22c55e' }]}>{t.payments.proofSent}</Text>
                       </TouchableOpacity>
                     ) : (
                       <Button

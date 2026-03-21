@@ -23,7 +23,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.domia.propertyapp",
-      "versionCode": 42,
+      "versionCode": 43,
       "permissions": [
         "com.android.vending.BILLING"
       ]
