@@ -9,6 +9,7 @@ import { useAuthStore } from '../../../src/stores/authStore';
 import { supabase } from '../../../src/services/supabase';
 import { Card, Button, Badge, ConfirmDialog } from '../../../src/components/ui';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { decode } from 'base64-arraybuffer';
 import { colors, spacing, typography } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
@@ -155,22 +156,55 @@ export default function TenantHomeScreen() {
     return { daysInMora, accumulatedFine: daysInMora * finePerDay, finePerDay };
   }, [currentPayment, connectionRequest]);
 
-  // Upload proof of payment image
+  // Resolve the real tenants.id for the connected tenant user.
+  // Owners create tenant rows with auto-generated UUIDs, so auth.uid()
+  // may not equal tenants.id. We look it up via the approved connection.
+  const getActualTenantId = async (): Promise<string> => {
+    if (connectionRequest?.unit_id && connectionRequest?.owner_id) {
+      const { data } = await supabase
+        .from('tenants')
+        .select('id')
+        .eq('unit_id', connectionRequest.unit_id)
+        .eq('owner_id', connectionRequest.owner_id)
+        .single();
+      if (data?.id) return data.id;
+    }
+    return user!.id;
+  };
+
+  // Pick a file (image or PDF) and return { uri, contentType, ext }
+  const pickFile = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['image/*', 'application/pdf'],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return null;
+    const asset = result.assets[0];
+    const isPdf = asset.mimeType === 'application/pdf';
+    const ext = isPdf ? 'pdf' : (asset.name?.split('.').pop() ?? 'jpg');
+    return { uri: asset.uri, contentType: asset.mimeType ?? `image/${ext}`, ext };
+  };
+
+  // Upload a file from a URI to Supabase Storage and return the public URL
+  const uploadFile = async (uri: string, filePath: string, contentType: string) => {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const { error } = await supabase.storage
+      .from('payment-proofs')
+      .upload(filePath, blob, { contentType, upsert: true });
+    if (error) throw error;
+    const { data: { publicUrl } } = supabase.storage.from('payment-proofs').getPublicUrl(filePath);
+    return publicUrl;
+  };
+
+  // Upload proof of rent payment — marks rent as Paid
   const uploadProofMutation = useMutation({
     mutationFn: async () => {
       if (!user?.id) throw new Error('Not authenticated');
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        AppAlert.alert('Permission needed', 'Please allow access to your photo library.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.8,
-        base64: true,
-      });
-      if (result.canceled || !result.assets?.[0]) return;
-      const asset = result.assets[0];
+      const file = await pickFile();
+      if (!file) return;
+
+      const tenantId = await getActualTenantId();
 
       // Auto-create a payment row for the current month if one doesn't exist yet
       let paymentId = currentPayment?.id;
@@ -179,7 +213,7 @@ export default function TenantHomeScreen() {
         const { data: newPayment, error: insertError } = await supabase
           .from('rent_payments')
           .insert({
-            tenant_id: user.id,
+            tenant_id: tenantId,
             period_month: now.getMonth() + 1,
             period_year: now.getFullYear(),
             amount_due: 0,
@@ -192,22 +226,26 @@ export default function TenantHomeScreen() {
         paymentId = newPayment.id;
       }
 
-      const ext = asset.uri.split('.').pop() ?? 'jpg';
-      const filePath = `${user.id}/${paymentId}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from('payment-proofs')
-        .upload(filePath, decode(asset.base64!), { contentType: `image/${ext}`, upsert: true });
-      if (uploadError) throw uploadError;
-      const { data: { publicUrl } } = supabase.storage.from('payment-proofs').getPublicUrl(filePath);
+      const filePath = `${tenantId}/${paymentId}.${file.ext}`;
+      const publicUrl = await uploadFile(file.uri, filePath, file.contentType);
+
+      // Upload proof and mark rent as Paid
+      const today = new Date().toISOString().split('T')[0];
       const { error } = await supabase
         .from('rent_payments')
-        .update({ proof_image_url: publicUrl, proof_seen_by_owner: false })
+        .update({
+          proof_image_url: publicUrl,
+          proof_seen_by_owner: false,
+          status: 'paid',
+          paid_date: today,
+        })
         .eq('id', paymentId);
       if (error) throw error;
     },
     onSuccess: () => {
-      playSound('notification');
+      playSound('paid');
       queryClient.invalidateQueries({ queryKey: ['tenant-current-payment', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ['tenant-payments', user?.id] });
     },
     onError: (err: any) => AppAlert.alert('Error', err.message),
   });
@@ -215,18 +253,10 @@ export default function TenantHomeScreen() {
   const uploadServicesProofMutation = useMutation({
     mutationFn: async () => {
       if (!user?.id) throw new Error('Not authenticated');
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        AppAlert.alert('Permission needed', 'Please allow access to your photo library.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.8,
-        base64: true,
-      });
-      if (result.canceled || !result.assets?.[0]) return;
-      const asset = result.assets[0];
+      const file = await pickFile();
+      if (!file) return;
+
+      const tenantId = await getActualTenantId();
 
       // Reuse or create the payment row for the current month
       let paymentId = currentPayment?.id;
@@ -235,7 +265,7 @@ export default function TenantHomeScreen() {
         const { data: newPayment, error: insertError } = await supabase
           .from('rent_payments')
           .insert({
-            tenant_id: user.id,
+            tenant_id: tenantId,
             period_month: now.getMonth() + 1,
             period_year: now.getFullYear(),
             amount_due: 0,
@@ -248,13 +278,10 @@ export default function TenantHomeScreen() {
         paymentId = newPayment.id;
       }
 
-      const ext = asset.uri.split('.').pop() ?? 'jpg';
-      const filePath = `${user.id}/services_${paymentId}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from('payment-proofs')
-        .upload(filePath, decode(asset.base64!), { contentType: `image/${ext}`, upsert: true });
-      if (uploadError) throw uploadError;
-      const { data: { publicUrl } } = supabase.storage.from('payment-proofs').getPublicUrl(filePath);
+      const filePath = `${tenantId}/services_${paymentId}.${file.ext}`;
+      const publicUrl = await uploadFile(file.uri, filePath, file.contentType);
+
+      // Upload services proof — no status change
       const { error } = await supabase
         .from('rent_payments')
         .update({ services_proof_image_url: publicUrl, services_proof_seen_by_owner: false } as any)
