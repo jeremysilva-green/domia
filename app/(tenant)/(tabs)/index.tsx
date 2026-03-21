@@ -156,13 +156,6 @@ export default function TenantHomeScreen() {
     return { daysInMora, accumulatedFine: daysInMora * finePerDay, finePerDay };
   }, [currentPayment, connectionRequest]);
 
-  // Resolve the real tenants.id via a SECURITY DEFINER RPC that bypasses RLS.
-  // Handles all cases: self-registered tenants, owner-created tenants with/without unit.
-  const getActualTenantId = async (): Promise<string> => {
-    const { data } = await supabase.rpc('get_my_tenant_record_id');
-    return data || user!.id;
-  };
-
   // Pick a file (image or PDF) and return { uri, contentType, ext }
   const pickFile = async () => {
     const result = await DocumentPicker.getDocumentAsync({
@@ -176,18 +169,6 @@ export default function TenantHomeScreen() {
     return { uri: asset.uri, contentType: asset.mimeType ?? `image/${ext}`, ext };
   };
 
-  // Upload a file from a URI to Supabase Storage and return the public URL
-  const uploadFile = async (uri: string, filePath: string, contentType: string) => {
-    const response = await fetch(uri);
-    const blob = await response.blob();
-    const { error } = await supabase.storage
-      .from('payment-proofs')
-      .upload(filePath, blob, { contentType, upsert: true });
-    if (error) throw error;
-    const { data: { publicUrl } } = supabase.storage.from('payment-proofs').getPublicUrl(filePath);
-    return publicUrl;
-  };
-
   // Upload proof of rent payment — marks rent as Paid
   const uploadProofMutation = useMutation({
     mutationFn: async () => {
@@ -195,43 +176,23 @@ export default function TenantHomeScreen() {
       const file = await pickFile();
       if (!file) return;
 
-      const tenantId = await getActualTenantId();
+      // Upload file to storage first
+      const tempPath = `${user.id}/rent_${Date.now()}.${file.ext}`;
+      const response = await fetch(file.uri);
+      const blob = await response.blob();
+      const { error: storageError } = await supabase.storage
+        .from('payment-proofs')
+        .upload(tempPath, blob, { contentType: file.contentType, upsert: true });
+      if (storageError) throw storageError;
+      const { data: { publicUrl } } = supabase.storage.from('payment-proofs').getPublicUrl(tempPath);
 
-      // Auto-create a payment row for the current month if one doesn't exist yet
-      let paymentId = currentPayment?.id;
-      if (!paymentId) {
-        const now = new Date();
-        const { data: newPayment, error: insertError } = await supabase
-          .from('rent_payments')
-          .insert({
-            tenant_id: tenantId,
-            period_month: now.getMonth() + 1,
-            period_year: now.getFullYear(),
-            amount_due: 0,
-            due_date: now.toISOString().split('T')[0],
-            status: 'due',
-          })
-          .select('id')
-          .single();
-        if (insertError) throw insertError;
-        paymentId = newPayment.id;
-      }
-
-      const filePath = `${tenantId}/${paymentId}.${file.ext}`;
-      const publicUrl = await uploadFile(file.uri, filePath, file.contentType);
-
-      // Upload proof and mark rent as Paid
-      const today = new Date().toISOString().split('T')[0];
-      const { error } = await supabase
-        .from('rent_payments')
-        .update({
-          proof_image_url: publicUrl,
-          proof_seen_by_owner: false,
-          status: 'paid',
-          paid_date: today,
-        })
-        .eq('id', paymentId);
+      // SECURITY DEFINER RPC handles tenant ID resolution, row creation, and status update
+      const { data: result, error } = await supabase.rpc('upload_payment_proof', {
+        p_proof_url: publicUrl,
+        p_is_services: false,
+      });
       if (error) throw error;
+      if ((result as any)?.error) throw new Error((result as any).error);
     },
     onSuccess: () => {
       playSound('paid');
@@ -247,37 +208,23 @@ export default function TenantHomeScreen() {
       const file = await pickFile();
       if (!file) return;
 
-      const tenantId = await getActualTenantId();
+      // Upload file to storage first
+      const tempPath = `${user.id}/services_${Date.now()}.${file.ext}`;
+      const response = await fetch(file.uri);
+      const blob = await response.blob();
+      const { error: storageError } = await supabase.storage
+        .from('payment-proofs')
+        .upload(tempPath, blob, { contentType: file.contentType, upsert: true });
+      if (storageError) throw storageError;
+      const { data: { publicUrl } } = supabase.storage.from('payment-proofs').getPublicUrl(tempPath);
 
-      // Reuse or create the payment row for the current month
-      let paymentId = currentPayment?.id;
-      if (!paymentId) {
-        const now = new Date();
-        const { data: newPayment, error: insertError } = await supabase
-          .from('rent_payments')
-          .insert({
-            tenant_id: tenantId,
-            period_month: now.getMonth() + 1,
-            period_year: now.getFullYear(),
-            amount_due: 0,
-            due_date: now.toISOString().split('T')[0],
-            status: 'due',
-          })
-          .select('id')
-          .single();
-        if (insertError) throw insertError;
-        paymentId = newPayment.id;
-      }
-
-      const filePath = `${tenantId}/services_${paymentId}.${file.ext}`;
-      const publicUrl = await uploadFile(file.uri, filePath, file.contentType);
-
-      // Upload services proof — no status change
-      const { error } = await supabase
-        .from('rent_payments')
-        .update({ services_proof_image_url: publicUrl, services_proof_seen_by_owner: false } as any)
-        .eq('id', paymentId);
+      // SECURITY DEFINER RPC handles tenant ID resolution, row creation — no status change
+      const { data: result, error } = await supabase.rpc('upload_payment_proof', {
+        p_proof_url: publicUrl,
+        p_is_services: true,
+      });
       if (error) throw error;
+      if ((result as any)?.error) throw new Error((result as any).error);
     },
     onSuccess: () => {
       playSound('notification');
