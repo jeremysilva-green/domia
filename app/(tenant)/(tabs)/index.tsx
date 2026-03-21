@@ -506,29 +506,23 @@ export default function TenantHomeScreen() {
                       <Feather name="credit-card" size={16} color={colors.yellow} />
                       <Text style={styles.pagosTitleText}>{t.payments.title}</Text>
                     </View>
-                    {currentPayment?.status === 'paid' ? (
-                      <Badge label={t.payments.alDia} variant="success" size="sm" />
-                    ) : currentPayment?.proof_image_url ? (
-                      <Badge label={t.payments.pendingConfirmation} variant="warning" size="sm" />
-                    ) : moraData ? (
+                    {moraData && !currentPayment?.proof_image_url && (
                       <Badge label={`${t.payments.mora} · ${moraData.daysInMora}d`} variant="error" size="sm" />
-                    ) : null}
-                    {currentPayment?.status !== 'paid' && (
-                      currentPayment?.proof_image_url && !isProofWindowReset ? (
-                        <TouchableOpacity onPress={() => setProofModalVisible(true)} style={styles.pagosProofRow}>
-                          <Feather name="check-circle" size={14} color="#22c55e" />
-                          <Text style={[styles.pagosProofText, { color: '#22c55e' }]}>{t.payments.proofSent}</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <Button
-                          title={t.payments.uploadProof}
-                          variant="outline"
-                          size="sm"
-                          onPress={() => uploadProofMutation.mutate()}
-                          loading={uploadProofMutation.isPending}
-                          style={styles.pagosUploadBtn}
-                        />
-                      )
+                    )}
+                    {(currentPayment?.proof_image_url || currentPayment?.status === 'paid') && !isProofWindowReset ? (
+                      <TouchableOpacity onPress={() => setProofModalVisible(true)} style={styles.pagosProofRow}>
+                        <Feather name="check-circle" size={14} color="#22c55e" />
+                        <Text style={[styles.pagosProofText, { color: '#22c55e' }]}>{t.payments.proofSent}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Button
+                        title={t.payments.uploadProof}
+                        variant="outline"
+                        size="sm"
+                        onPress={() => uploadProofMutation.mutate()}
+                        loading={uploadProofMutation.isPending}
+                        style={styles.pagosUploadBtn}
+                      />
                     )}
                   </View>
 
@@ -541,9 +535,6 @@ export default function TenantHomeScreen() {
                       <Feather name="droplet" size={16} color={colors.yellow} />
                       <Text style={styles.pagosTitleText}>{t.payments.utilities}</Text>
                     </View>
-                    {(currentPayment as any)?.services_proof_image_url && !isProofWindowReset && (
-                      <Badge label={t.payments.pendingConfirmation} variant="warning" size="sm" />
-                    )}
                     {(currentPayment as any)?.services_proof_image_url && !isProofWindowReset ? (
                       <TouchableOpacity onPress={() => setServicesProofModalVisible(true)} style={styles.pagosProofRow}>
                         <Feather name="check-circle" size={14} color="#22c55e" />
