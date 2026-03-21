@@ -41,6 +41,7 @@ import { useI18n, Language } from '../../../src/i18n';
 import { Card, Button, Input } from '../../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../../src/constants/theme';
 import { supabase } from '../../../src/services/supabase';
+import { AppAlert } from '../../../src/components/ui/AppAlert';
 
 export default function TenantSettingsScreen() {
   const { tenantProfile, user, signOut, isLoading, updateTenantProfile } = useAuthStore();
@@ -56,7 +57,7 @@ export default function TenantSettingsScreen() {
   const handlePickPhoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow access to your photo library.');
+      AppAlert.alert('Permission required', 'Please allow access to your photo library.');
       return;
     }
 
@@ -100,14 +101,14 @@ export default function TenantSettingsScreen() {
         .update({ profile_image_url: publicUrl } as any)
         .eq('id', user!.id);
     } catch (err: any) {
-      Alert.alert(t.common.error, err.message || 'Failed to upload photo.');
+      AppAlert.alert(t.common.error, err.message || 'Failed to upload photo.');
     } finally {
       setUploadingPhoto(false);
     }
   };
 
   const handleSignOut = () => {
-    Alert.alert(t.auth.logout, t.auth.logoutConfirm, [
+    AppAlert.alert(t.auth.logout, t.auth.logoutConfirm, [
       { text: t.common.cancel, style: 'cancel' },
       {
         text: t.auth.logout,
@@ -139,9 +140,9 @@ export default function TenantSettingsScreen() {
         .eq('id', user!.id);
 
       setIsEditing(false);
-      Alert.alert(t.common.success, 'Profile updated successfully');
+      AppAlert.alert(t.common.success, 'Profile updated successfully');
     } catch (error: any) {
-      Alert.alert(t.common.error, error.message || 'Failed to update profile');
+      AppAlert.alert(t.common.error, error.message || 'Failed to update profile');
     } finally {
       setSaving(false);
     }

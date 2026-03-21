@@ -32,6 +32,7 @@ import { setupNotificationChannels, requestNotificationPermissions } from '../..
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
+import { AppAlert } from '../../../src/components/ui/AppAlert';
 
 // ============================================
 // TAB CONFIGURATION
@@ -737,10 +738,10 @@ function NotificationsContent() {
       if (variables.tenantId) {
         router.push(`/(app)/tenant/${variables.tenantId}` as any);
       } else {
-        Alert.alert(t.common.success, t.notifications.approvalSuccess);
+        AppAlert.alert(t.common.success, t.notifications.approvalSuccess);
       }
     },
-    onError: (error: any) => Alert.alert(t.common.error, error.message || 'Failed to approve request'),
+    onError: (error: any) => AppAlert.alert(t.common.error, error.message || 'Failed to approve request'),
   });
 
   const rejectRequest = useMutation({
@@ -756,7 +757,7 @@ function NotificationsContent() {
       queryClient.invalidateQueries({ queryKey: ['pending-connections-count'] });
       setInfoDialog({ title: t.common.done, message: t.notifications.declineSuccess });
     },
-    onError: (error: any) => Alert.alert(t.common.error, error.message || 'Failed to decline request'),
+    onError: (error: any) => AppAlert.alert(t.common.error, error.message || 'Failed to decline request'),
   });
 
   const clearAll = useMutation({
@@ -774,7 +775,7 @@ function NotificationsContent() {
       setShowClearAllDialog(false);
       setInfoDialog({ title: t.common.done, message: t.notifications.clearAllSuccess });
     },
-    onError: (error: any) => Alert.alert(t.common.error, error.message || 'Failed to clear notifications'),
+    onError: (error: any) => AppAlert.alert(t.common.error, error.message || 'Failed to clear notifications'),
   });
 
   const { data: paymentProofs } = useQuery({
@@ -879,7 +880,7 @@ function NotificationsContent() {
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['tenants'] });
     },
-    onError: (error: any) => Alert.alert(t.common.error, error.message),
+    onError: (error: any) => AppAlert.alert(t.common.error, error.message),
   });
 
   const handleApprove = (request: ConnectionRequestWithDetails) => {
@@ -1195,7 +1196,7 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
   const handlePickPhoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert(t.common.error, 'Please allow access to your photo library.');
+      AppAlert.alert(t.common.error, 'Please allow access to your photo library.');
       return;
     }
 
@@ -1232,7 +1233,7 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
       if (updateError) throw updateError;
       await fetchOwnerProfile();
     } catch (err: any) {
-      Alert.alert(t.common.error, err.message || 'Failed to upload photo.');
+      AppAlert.alert(t.common.error, err.message || 'Failed to upload photo.');
     } finally {
       setUploadingPhoto(false);
     }
@@ -1384,7 +1385,7 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
         UTI: 'com.adobe.pdf',
       });
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'No se pudo generar el reporte.');
+      AppAlert.alert('Error', e.message || 'No se pudo generar el reporte.');
     } finally {
       setIsGeneratingPDF(false);
     }
@@ -1401,7 +1402,7 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
       await fetchOwnerProfile();
       setIsBankEditing(false);
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      AppAlert.alert('Error', e.message);
     } finally {
       setSavingBank(false);
     }
@@ -1418,14 +1419,14 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
       await fetchOwnerProfile();
       setIsPhoneEditing(false);
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      AppAlert.alert('Error', e.message);
     } finally {
       setSavingPhone(false);
     }
   };
 
   const handleSignOut = () => {
-    Alert.alert(t.auth.logout, t.auth.logoutConfirm, [
+    AppAlert.alert(t.auth.logout, t.auth.logoutConfirm, [
       { text: t.common.cancel, style: 'cancel' },
       { text: t.auth.logout, style: 'destructive', onPress: signOut },
     ]);
@@ -1435,7 +1436,7 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
 
   const handleDeleteAccount = () => {
     // Step 2: final confirmation after user dismissed subscription warning
-    Alert.alert(
+    AppAlert.alert(
       (t.settings as any).deleteAccountConfirmTitle,
       (t.settings as any).deleteAccountConfirmMsg,
       [
@@ -1447,7 +1448,7 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
             try {
               await deleteAccount();
             } catch {
-              Alert.alert(t.common.error, (t.settings as any).deleteAccountFailed);
+              AppAlert.alert(t.common.error, (t.settings as any).deleteAccountFailed);
             }
           },
         },

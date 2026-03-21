@@ -36,6 +36,7 @@ import {
   PlanType,
   useSubscriptionStore,
 } from '../../../../src/stores/subscriptionStore';
+import { AppAlert } from '../../../../src/components/ui/AppAlert';
 
 const PLAN_ORDER: PlanType[] = ['1-10', '10-30', '30-50'];
 
@@ -95,7 +96,7 @@ export default function PropertyDetailScreen() {
         setShowUpgradeModal(false);
         router.push(`/(app)/property/${id}/unit/new`);
       } catch (e: any) {
-        Alert.alert(t.common.error, e.message);
+        AppAlert.alert(t.common.error, e.message);
       }
       return;
     }
@@ -108,10 +109,10 @@ export default function PropertyDetailScreen() {
           setShowUpgradeModal(false);
           router.push(`/(app)/property/${id}/unit/new`);
         } catch (e: any) {
-          Alert.alert(t.common.error, e.message);
+          AppAlert.alert(t.common.error, e.message);
         }
       },
-      (msg) => Alert.alert(t.settings.upgradeFailed, msg)
+      (msg) => AppAlert.alert(t.settings.upgradeFailed, msg)
     );
   };
 
@@ -201,7 +202,7 @@ export default function PropertyDetailScreen() {
       setIsEditingProperty(false);
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message);
+      AppAlert.alert(t.common.error, error.message);
     },
   });
 
@@ -225,7 +226,7 @@ export default function PropertyDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message);
+      AppAlert.alert(t.common.error, error.message);
     },
   });
 
@@ -241,7 +242,7 @@ export default function PropertyDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message);
+      AppAlert.alert(t.common.error, error.message);
     },
   });
 
@@ -293,7 +294,7 @@ export default function PropertyDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['properties'] });
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message || t.properties.uploadFailed);
+      AppAlert.alert(t.common.error, error.message || t.properties.uploadFailed);
     },
   });
 
@@ -301,7 +302,7 @@ export default function PropertyDetailScreen() {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permissionResult.granted) {
-      Alert.alert(t.properties.permissionRequired, t.properties.permissionMessage);
+      AppAlert.alert(t.properties.permissionRequired, t.properties.permissionMessage);
       return;
     }
 
@@ -318,7 +319,7 @@ export default function PropertyDetailScreen() {
   };
 
   const handleDelete = () => {
-    Alert.alert(
+    AppAlert.alert(
       t.properties.deleteProperty,
       t.properties.deletePropertyConfirm,
       [
@@ -641,7 +642,7 @@ export default function PropertyDetailScreen() {
               onPress={() => {
                 setShowUnitMenu(false);
                 if (menuUnit) {
-                  Alert.alert(
+                  AppAlert.alert(
                     t.units.deleteUnit,
                     t.units.deleteUnitConfirm,
                     [
@@ -688,8 +689,8 @@ export default function PropertyDetailScreen() {
             <Button
               title={t.common.save}
               onPress={() => {
-                if (!editName.trim()) { Alert.alert(t.common.error, t.properties.propertyNameRequired); return; }
-                if (!editAddress.trim()) { Alert.alert(t.common.error, t.properties.addressRequired); return; }
+                if (!editName.trim()) { AppAlert.alert(t.common.error, t.properties.propertyNameRequired); return; }
+                if (!editAddress.trim()) { AppAlert.alert(t.common.error, t.properties.addressRequired); return; }
                 updateProperty.mutate();
               }}
               loading={updateProperty.isPending}

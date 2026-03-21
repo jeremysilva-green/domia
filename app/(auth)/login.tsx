@@ -18,6 +18,7 @@ import { useI18n } from '../../src/i18n';
 import { Button, Input } from '../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../src/constants/theme';
 import { UserRole } from '../../src/types';
+import { AppAlert } from '../../src/components/ui/AppAlert';
 
 export default function LoginScreen() {
   const [role, setRole] = useState<UserRole>('owner');
@@ -53,7 +54,7 @@ export default function LoginScreen() {
       await signIn(email.trim(), password);
       router.replace('/');
     } catch (error: any) {
-      Alert.alert(t.auth.loginFailed, error.message || 'An error occurred');
+      AppAlert.alert(t.auth.loginFailed, error.message || 'An error occurred');
     }
   };
 

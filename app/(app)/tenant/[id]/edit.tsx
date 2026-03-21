@@ -17,6 +17,7 @@ import { Button, Input, Card } from '../../../../src/components/ui';
 import { colors, spacing, typography } from '../../../../src/constants/theme';
 import { useI18n } from '../../../../src/i18n';
 import { prefillPhone } from '../../../../src/utils/phoneCountryCode';
+import { AppAlert } from '../../../../src/components/ui/AppAlert';
 
 // Convert YYYY-MM-DD to display format based on language
 // English: MM/DD/YYYY, Spanish: DD/MM/YYYY
@@ -137,7 +138,7 @@ export default function EditTenantScreen() {
       router.back();
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message || t.tenants.updateTenantFailed);
+      AppAlert.alert(t.common.error, error.message || t.tenants.updateTenantFailed);
     },
   });
 

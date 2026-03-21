@@ -18,6 +18,7 @@ import { useI18n } from '../../../src/i18n';
 import { Button, Input } from '../../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../../src/constants/theme';
 import { PropertyType } from '../../../src/types';
+import { AppAlert } from '../../../src/components/ui/AppAlert';
 
 export default function NewPropertyScreen() {
   const router = useRouter();
@@ -64,7 +65,7 @@ export default function NewPropertyScreen() {
       router.replace(`/(app)/property/${data.id}`);
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message || t.properties.createFailed);
+      AppAlert.alert(t.common.error, error.message || t.properties.createFailed);
     },
   });
 

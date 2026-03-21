@@ -20,6 +20,7 @@ import { Card, Button, Badge } from '../../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../../src/constants/theme';
 import { ConnectionRequest, Unit } from '../../../src/types';
 import { formatMonthlyRent } from '../../../src/utils/currency';
+import { AppAlert } from '../../../src/components/ui/AppAlert';
 
 interface ConnectionRequestWithDetails extends ConnectionRequest {
   assigned_unit?: {
@@ -127,7 +128,7 @@ export default function NotificationsScreen() {
       setVacantUnits(vacant);
     } catch (error: any) {
       console.error('fetchVacantUnits error:', error);
-      Alert.alert(t.common.error, error.message || 'Failed to load units');
+      AppAlert.alert(t.common.error, error.message || 'Failed to load units');
     } finally {
       setLoadingUnits(false);
     }
@@ -189,10 +190,10 @@ export default function NotificationsScreen() {
       setShowUnitModal(false);
       setSelectedRequest(null);
       setActiveTab('approved');
-      Alert.alert(t.common.success, t.notifications.approvalSuccess);
+      AppAlert.alert(t.common.success, t.notifications.approvalSuccess);
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message || 'Failed to approve request');
+      AppAlert.alert(t.common.error, error.message || 'Failed to approve request');
     },
   });
 
@@ -211,10 +212,10 @@ export default function NotificationsScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['connection-requests'] });
       setActiveTab('rejected');
-      Alert.alert(t.common.done, t.notifications.declineSuccess);
+      AppAlert.alert(t.common.done, t.notifications.declineSuccess);
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message || 'Failed to decline request');
+      AppAlert.alert(t.common.error, error.message || 'Failed to decline request');
     },
   });
 
@@ -225,7 +226,7 @@ export default function NotificationsScreen() {
   };
 
   const handleReject = (request: ConnectionRequestWithDetails) => {
-    Alert.alert(
+    AppAlert.alert(
       t.notifications.declineConfirm,
       `${t.notifications.declineConfirmMsg} ${request.tenant_name}?`,
       [

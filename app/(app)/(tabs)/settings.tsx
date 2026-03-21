@@ -9,6 +9,7 @@ import { useI18n, Language } from '../../../src/i18n';
 import { Card, Button, Input } from '../../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../../src/constants/theme';
 import { supabase } from '../../../src/services/supabase';
+import { AppAlert } from '../../../src/components/ui/AppAlert';
 
 function SettingsRow({
   label,
@@ -53,7 +54,7 @@ export default function SettingsScreen() {
   const handlePickPhoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow access to your photo library.');
+      AppAlert.alert('Permission required', 'Please allow access to your photo library.');
       return;
     }
 
@@ -91,7 +92,7 @@ export default function SettingsScreen() {
 
       await updateOwnerProfile({ profile_image_url: publicUrl });
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to upload photo.');
+      AppAlert.alert('Error', err.message || 'Failed to upload photo.');
     } finally {
       setUploadingPhoto(false);
     }
@@ -105,9 +106,9 @@ export default function SettingsScreen() {
         phone: phone.trim() || null,
       });
       setIsEditing(false);
-      Alert.alert(t.common.success, 'Profile updated successfully');
+      AppAlert.alert(t.common.success, 'Profile updated successfully');
     } catch (error: any) {
-      Alert.alert(t.common.error, error.message || 'Failed to update profile');
+      AppAlert.alert(t.common.error, error.message || 'Failed to update profile');
     } finally {
       setSaving(false);
     }
@@ -124,16 +125,16 @@ export default function SettingsScreen() {
         bank_alias: bankAlias.trim() || null,
       });
       setIsBankEditing(false);
-      Alert.alert(t.common.success, 'Bank information saved successfully');
+      AppAlert.alert(t.common.success, 'Bank information saved successfully');
     } catch (error: any) {
-      Alert.alert(t.common.error, error.message || 'Failed to save bank information');
+      AppAlert.alert(t.common.error, error.message || 'Failed to save bank information');
     } finally {
       setSavingBank(false);
     }
   };
 
   const handleSignOut = () => {
-    Alert.alert(t.auth.logout, t.auth.logoutConfirm, [
+    AppAlert.alert(t.auth.logout, t.auth.logoutConfirm, [
       { text: t.common.cancel, style: 'cancel' },
       {
         text: t.auth.logout,

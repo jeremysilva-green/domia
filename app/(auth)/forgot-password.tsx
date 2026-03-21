@@ -15,6 +15,7 @@ import { useAuthStore } from '../../src/stores/authStore';
 import { Button, Input } from '../../src/components/ui';
 import { colors, spacing, typography } from '../../src/constants/theme';
 import { useI18n } from '../../src/i18n';
+import { AppAlert } from '../../src/components/ui/AppAlert';
 
 export default function ForgotPasswordScreen() {
   const { t } = useI18n();
@@ -45,7 +46,7 @@ export default function ForgotPasswordScreen() {
       await resetPassword(email.trim());
       setSent(true);
     } catch (error: any) {
-      Alert.alert(t.common.error, error.message || t.common.error);
+      AppAlert.alert(t.common.error, error.message || t.common.error);
     }
   };
 

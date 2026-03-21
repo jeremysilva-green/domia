@@ -17,6 +17,7 @@ import { supabase } from '../../../src/services/supabase';
 import { useI18n } from '../../../src/i18n';
 import { colors, spacing, typography, borderRadius } from '../../../src/constants/theme';
 import { MaintenanceRequestWithImages } from '../../../src/types';
+import { AppAlert } from '../../../src/components/ui/AppAlert';
 
 export default function MaintenanceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -81,7 +82,7 @@ export default function MaintenanceDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['maintenance-request', id] });
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message);
+      AppAlert.alert(t.common.error, error.message);
     },
   });
 
@@ -99,7 +100,7 @@ export default function MaintenanceDetailScreen() {
       router.back();
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message);
+      AppAlert.alert(t.common.error, error.message);
     },
   });
 

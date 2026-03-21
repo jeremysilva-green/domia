@@ -19,6 +19,7 @@ import { colors, spacing, typography } from '../../../../../src/constants/theme'
 import { RentStatus } from '../../../../../src/types';
 import { useI18n } from '../../../../../src/i18n';
 import { CURRENCIES, Currency, getCurrencySymbol, getCurrencyLabel } from '../../../../../src/utils/currency';
+import { AppAlert } from '../../../../../src/components/ui/AppAlert';
 
 export default function UnitDetailScreen() {
   const { t } = useI18n();
@@ -131,7 +132,7 @@ export default function UnitDetailScreen() {
       setIsEditing(false);
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message);
+      AppAlert.alert(t.common.error, error.message);
     },
   });
 
@@ -153,11 +154,11 @@ export default function UnitDetailScreen() {
 
   const handleSave = () => {
     if (!editUnitNumber.trim()) {
-      Alert.alert(t.common.error, t.units.unitNumberRequired);
+      AppAlert.alert(t.common.error, t.units.unitNumberRequired);
       return;
     }
     if (!editRentAmount.trim() || isNaN(parseFloat(editRentAmount))) {
-      Alert.alert(t.common.error, t.units.rentAmountRequired);
+      AppAlert.alert(t.common.error, t.units.rentAmountRequired);
       return;
     }
     updateUnit.mutate();

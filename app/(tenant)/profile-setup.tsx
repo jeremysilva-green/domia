@@ -16,6 +16,7 @@ import { useI18n } from '../../src/i18n';
 import { Button, Input } from '../../src/components/ui';
 import { colors, spacing, typography } from '../../src/constants/theme';
 import { supabase } from '../../src/services/supabase';
+import { AppAlert } from '../../src/components/ui/AppAlert';
 
 export default function TenantProfileSetupScreen() {
   const { t } = useI18n();
@@ -77,7 +78,7 @@ export default function TenantProfileSetupScreen() {
 
       router.replace('/(tenant)/(tabs)');
     } catch (error: any) {
-      Alert.alert(t.common.error, error.message || t.common.error);
+      AppAlert.alert(t.common.error, error.message || t.common.error);
     } finally {
       setSaving(false);
     }

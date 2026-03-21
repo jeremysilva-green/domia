@@ -22,6 +22,7 @@ import {
   PLAN_PRICES,
   PlanType,
 } from '../../src/stores/subscriptionStore';
+import { AppAlert } from '../../src/components/ui/AppAlert';
 
 const TOTAL_STEPS = 6;
 
@@ -165,7 +166,7 @@ export default function OnboardingScreen() {
         });
         router.replace('/(app)/(tabs)');
       } catch (e: any) {
-        Alert.alert('Error', e.message);
+        AppAlert.alert('Error', e.message);
       }
       return;
     }
@@ -181,7 +182,7 @@ export default function OnboardingScreen() {
         });
         router.replace('/(app)/(tabs)');
       } catch (e: any) {
-        Alert.alert('Error', e.message);
+        AppAlert.alert('Error', e.message);
       }
     };
 
@@ -207,7 +208,7 @@ export default function OnboardingScreen() {
         if (msg.includes('already') || msg.includes('E_ALREADY_OWNED') || msg.includes('ItemAlreadyOwned')) {
           await doCompleteAndNavigate();
         } else {
-          Alert.alert(t.onboarding.purchaseError, msg);
+          AppAlert.alert(t.onboarding.purchaseError, msg);
         }
       }
     );

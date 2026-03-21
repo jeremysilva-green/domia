@@ -8,6 +8,7 @@ import { useAuthStore } from '../src/stores/authStore';
 import { colors } from '../src/constants/theme';
 import { View, ActivityIndicator, StyleSheet, AppState, AppStateStatus } from 'react-native';
 import { supabase } from '../src/services/supabase';
+import { AppAlertHost } from '../src/components/ui/AppAlert';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -76,6 +77,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <RootLayoutNav />
+        <AppAlertHost />
       </QueryClientProvider>
     </SafeAreaProvider>
   );

@@ -14,6 +14,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '../../../../src/services/supabase';
 import { Button, Input, Card } from '../../../../src/components/ui';
 import { colors, spacing, typography } from '../../../../src/constants/theme';
+import { AppAlert } from '../../../../src/components/ui/AppAlert';
 
 export default function TenantOnboardingScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
@@ -87,7 +88,7 @@ export default function TenantOnboardingScreen() {
       setCompleted(true);
     },
     onError: (error: any) => {
-      Alert.alert('Error', error.message || 'Failed to complete registration');
+      AppAlert.alert('Error', error.message || 'Failed to complete registration');
     },
   });
 

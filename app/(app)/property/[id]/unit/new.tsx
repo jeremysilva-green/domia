@@ -18,6 +18,7 @@ import { Button, Input } from '../../../../../src/components/ui';
 import { colors, spacing, typography } from '../../../../../src/constants/theme';
 import { useI18n } from '../../../../../src/i18n';
 import { CURRENCIES, Currency, getCurrencyLabel } from '../../../../../src/utils/currency';
+import { AppAlert } from '../../../../../src/components/ui/AppAlert';
 
 export default function NewUnitScreen() {
   const { t } = useI18n();
@@ -27,8 +28,6 @@ export default function NewUnitScreen() {
   const [unitNumber, setUnitNumber] = useState('');
   const [rentAmount, setRentAmount] = useState('');
   const [currency, setCurrency] = useState<Currency>('USD');
-  const [bedrooms, setBedrooms] = useState('1');
-  const [bathrooms, setBathrooms] = useState('1');
   const [errors, setErrors] = useState<{ unitNumber?: string; rentAmount?: string }>({});
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
 
@@ -43,8 +42,6 @@ export default function NewUnitScreen() {
           unit_number: unitNumber.trim(),
           rent_amount: parseFloat(rentAmount),
           currency: currency,
-          bedrooms: parseInt(bedrooms) || 1,
-          bathrooms: parseFloat(bathrooms) || 1,
           status: 'vacant',
         })
         .select()
@@ -61,7 +58,7 @@ export default function NewUnitScreen() {
       router.back();
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message || t.properties.createUnitFailed);
+      AppAlert.alert(t.common.error, error.message || t.properties.createUnitFailed);
     },
   });
 
@@ -131,22 +128,6 @@ export default function NewUnitScreen() {
             onChangeText={setRentAmount}
             keyboardType="decimal-pad"
             error={errors.rentAmount}
-          />
-
-          <Input
-            label={t.units.bedrooms}
-            placeholder="1"
-            value={bedrooms}
-            onChangeText={setBedrooms}
-            keyboardType="number-pad"
-          />
-
-          <Input
-            label={t.units.bathrooms}
-            placeholder="1"
-            value={bathrooms}
-            onChangeText={setBathrooms}
-            keyboardType="decimal-pad"
           />
 
           <Button

@@ -19,6 +19,7 @@ import {
   requestNotificationPermissions,
   setupNotificationChannels,
 } from '../../../src/utils/notificationScheduler';
+import { AppAlert } from '../../../src/components/ui/AppAlert';
 
 export default function TenantHomeScreen() {
   const { t } = useI18n();
@@ -160,7 +161,7 @@ export default function TenantHomeScreen() {
       if (!user?.id) throw new Error('Not authenticated');
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please allow access to your photo library.');
+        AppAlert.alert('Permission needed', 'Please allow access to your photo library.');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -208,7 +209,7 @@ export default function TenantHomeScreen() {
       playSound('notification');
       queryClient.invalidateQueries({ queryKey: ['tenant-current-payment', user?.id] });
     },
-    onError: (err: any) => Alert.alert('Error', err.message),
+    onError: (err: any) => AppAlert.alert('Error', err.message),
   });
 
   const uploadServicesProofMutation = useMutation({
@@ -216,7 +217,7 @@ export default function TenantHomeScreen() {
       if (!user?.id) throw new Error('Not authenticated');
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please allow access to your photo library.');
+        AppAlert.alert('Permission needed', 'Please allow access to your photo library.');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -264,7 +265,7 @@ export default function TenantHomeScreen() {
       playSound('notification');
       queryClient.invalidateQueries({ queryKey: ['tenant-current-payment', user?.id] });
     },
-    onError: (err: any) => Alert.alert('Error', err.message),
+    onError: (err: any) => AppAlert.alert('Error', err.message),
   });
 
   // Set up notification channels once on mount
@@ -417,7 +418,7 @@ export default function TenantHomeScreen() {
       queryClient.invalidateQueries({ queryKey: ['tenant-connection', user?.id] });
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message || 'Failed to disconnect. Please try again.');
+      AppAlert.alert(t.common.error, error.message || 'Failed to disconnect. Please try again.');
     },
   });
 
@@ -860,7 +861,7 @@ export default function TenantHomeScreen() {
                 title={t.tenantHome.disconnectSend}
                 onPress={() => {
                   if (!disconnectReason.trim()) {
-                    Alert.alert('', t.tenantHome.disconnectReasonPlaceholder);
+                    AppAlert.alert('', t.tenantHome.disconnectReasonPlaceholder);
                     return;
                   }
                   submitDisconnectMutation.mutate(disconnectReason.trim());

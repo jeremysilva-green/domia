@@ -27,6 +27,7 @@ import { colors, spacing, typography } from '../../../../src/constants/theme';
 import { TenantWithDetails, RentPayment } from '../../../../src/types';
 import { useI18n } from '../../../../src/i18n';
 import { formatCurrency } from '../../../../src/utils/currency';
+import { AppAlert } from '../../../../src/components/ui/AppAlert';
 
 export default function TenantDetailScreen() {
   const { t, language } = useI18n();
@@ -157,7 +158,7 @@ export default function TenantDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['property'] });
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message);
+      AppAlert.alert(t.common.error, error.message);
     },
   });
 
@@ -228,12 +229,12 @@ export default function TenantDetailScreen() {
       router.back();
     },
     onError: (error: any) => {
-      Alert.alert('Error', error.message || 'Failed to delete tenant');
+      AppAlert.alert('Error', error.message || 'Failed to delete tenant');
     },
   });
 
   const handleDelete = () => {
-    Alert.alert(
+    AppAlert.alert(
       t.tenantDetail.deleteTenant,
       `${t.tenantDetail.deleteTenantConfirm} ${tenant?.full_name || t.properties.unnamedTenant}?`,
       [
@@ -274,14 +275,14 @@ export default function TenantDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['tenant', id] });
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message);
+      AppAlert.alert(t.common.error, error.message);
     },
   });
 
   const handlePickLeaseImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert(t.properties.permissionRequired, t.properties.permissionMessage);
+      AppAlert.alert(t.properties.permissionRequired, t.properties.permissionMessage);
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({

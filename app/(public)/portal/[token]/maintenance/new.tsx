@@ -18,6 +18,7 @@ import { supabase } from '../../../../../src/services/supabase';
 import { Button, Input, Card } from '../../../../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../../../../src/constants/theme';
 import { MaintenanceCategory, MaintenanceUrgency } from '../../../../../src/types';
+import { AppAlert } from '../../../../../src/components/ui/AppAlert';
 
 const categories: { label: string; value: MaintenanceCategory }[] = [
   { label: 'Plumbing', value: 'plumbing' },
@@ -114,13 +115,13 @@ export default function NewMaintenanceRequestScreen() {
       setSubmitted(true);
     },
     onError: (error: any) => {
-      Alert.alert('Error', error.message || 'Failed to submit request');
+      AppAlert.alert('Error', error.message || 'Failed to submit request');
     },
   });
 
   const pickImage = async () => {
     if (images.length >= 5) {
-      Alert.alert('Limit Reached', 'You can only upload up to 5 images');
+      AppAlert.alert('Limit Reached', 'You can only upload up to 5 images');
       return;
     }
 

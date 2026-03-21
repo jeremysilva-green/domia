@@ -20,6 +20,7 @@ import { useAuthStore } from '../../../src/stores/authStore';
 import { Card, Button, ConfirmDialog } from '../../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
+import { AppAlert } from '../../../src/components/ui/AppAlert';
 
 type PropertyItem = {
   id: string;
@@ -142,7 +143,7 @@ export default function OwnersListScreen() {
       queryClient.invalidateQueries({ queryKey: ['tenant-payments'] });
     },
     onError: (error: any) => {
-      Alert.alert('Error', error.message || 'Failed to disconnect. Please try again.');
+      AppAlert.alert('Error', error.message || 'Failed to disconnect. Please try again.');
     },
   });
 
@@ -203,9 +204,9 @@ export default function OwnersListScreen() {
     },
     onError: (error: any) => {
       if (error.message?.includes('duplicate')) {
-        Alert.alert(t.owners.alreadyRequested, t.owners.alreadyRequestedMsg);
+        AppAlert.alert(t.owners.alreadyRequested, t.owners.alreadyRequestedMsg);
       } else {
-        Alert.alert(t.common.error, error.message || t.common.error);
+        AppAlert.alert(t.common.error, error.message || t.common.error);
       }
     },
   });

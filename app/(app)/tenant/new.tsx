@@ -18,6 +18,7 @@ import { Button, Input, Card } from '../../../src/components/ui';
 import { colors, spacing, typography } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
 import { prefillPhone } from '../../../src/utils/phoneCountryCode';
+import { AppAlert } from '../../../src/components/ui/AppAlert';
 
 type Currency = 'USD' | 'PYG';
 
@@ -153,7 +154,7 @@ export default function NewTenantScreen() {
       router.replace(`/(app)/tenant/${data.id}`);
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message || t.tenants.addTenantFailed);
+      AppAlert.alert(t.common.error, error.message || t.tenants.addTenantFailed);
     },
   });
 

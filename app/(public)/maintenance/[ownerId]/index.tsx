@@ -20,6 +20,7 @@ import { Feather } from '@expo/vector-icons';
 import { supabase } from '../../../../src/services/supabase';
 import { Button, Input, Card } from '../../../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../../../src/constants/theme';
+import { AppAlert } from '../../../../src/components/ui/AppAlert';
 
 type RequestType = 'maintenance' | 'complaint';
 
@@ -114,13 +115,13 @@ export default function PublicMaintenanceRequestScreen() {
       setSubmitted(true);
     },
     onError: (error: any) => {
-      Alert.alert('Error', error.message || 'Failed to submit request');
+      AppAlert.alert('Error', error.message || 'Failed to submit request');
     },
   });
 
   const pickMedia = async () => {
     if (media.length >= 5) {
-      Alert.alert('Limit Reached', 'You can only upload up to 5 files');
+      AppAlert.alert('Limit Reached', 'You can only upload up to 5 files');
       return;
     }
 

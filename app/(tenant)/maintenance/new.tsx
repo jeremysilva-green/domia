@@ -19,6 +19,7 @@ import { useI18n } from '../../../src/i18n';
 import { Button, Input } from '../../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../../src/constants/theme';
 import { MaintenanceCategory, MaintenanceUrgency } from '../../../src/types';
+import { AppAlert } from '../../../src/components/ui/AppAlert';
 
 export default function NewTenantMaintenanceScreen() {
   const { t } = useI18n();
@@ -99,7 +100,7 @@ export default function NewTenantMaintenanceScreen() {
       setSubmitted(true);
     },
     onError: (error: any) => {
-      Alert.alert(t.common.error, error.message || t.tenantRequests.submitFailed);
+      AppAlert.alert(t.common.error, error.message || t.tenantRequests.submitFailed);
     },
   });
 
