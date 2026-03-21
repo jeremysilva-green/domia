@@ -170,12 +170,14 @@ export default function OnboardingScreen() {
       return;
     }
 
+    const plan = selectedPlan;
+
     const doCompleteAndNavigate = async () => {
       try {
         await completeOnboarding({
           displayName: owner?.full_name || '',
-          planType: selectedPlan!,
-          productId: PLAN_PRODUCT_IDS[selectedPlan!],
+          planType: plan,
+          productId: PLAN_PRODUCT_IDS[plan],
         });
         router.replace('/(app)/(tabs)');
       } catch (e: any) {
@@ -183,8 +185,22 @@ export default function OnboardingScreen() {
       }
     };
 
+    // Check if user already owns any of our subscriptions (e.g. paid but got stuck on screen)
+    try {
+      const RNIap = await import('react-native-iap');
+      const existing = await (RNIap as any).getAvailablePurchases();
+      const ownedSkus = Object.values(PLAN_PRODUCT_IDS);
+      const owned = existing?.find((p: any) => ownedSkus.includes(p.productId));
+      if (owned) {
+        await doCompleteAndNavigate();
+        return;
+      }
+    } catch {
+      // getAvailablePurchases failed — proceed with normal purchase flow
+    }
+
     purchasePlan(
-      selectedPlan,
+      plan,
       doCompleteAndNavigate,
       async (msg) => {
         // If the user already owns this subscription, complete onboarding and navigate
