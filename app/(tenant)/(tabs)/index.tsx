@@ -9,8 +9,6 @@ import { useAuthStore } from '../../../src/stores/authStore';
 import { supabase } from '../../../src/services/supabase';
 import { Card, Button, Badge, ConfirmDialog } from '../../../src/components/ui';
 import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
 import { decode } from 'base64-arraybuffer';
 import { colors, spacing, typography } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
@@ -157,36 +155,31 @@ export default function TenantHomeScreen() {
     return { daysInMora, accumulatedFine: daysInMora * finePerDay, finePerDay };
   }, [currentPayment, connectionRequest]);
 
-  // Pick a file (image or PDF) and return { uri, contentType, ext }
-  const pickFile = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ['image/*', 'application/pdf'],
-      copyToCacheDirectory: true,
+  // Pick image from library and upload to Supabase storage, return public URL
+  const pickAndUploadImage = async (storagePath: string): Promise<string> => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') throw new Error('Photo library permission denied');
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      base64: true,
     });
-    if (result.canceled || !result.assets?.[0]) return null;
+    if (result.canceled || !result.assets?.[0]?.base64) throw new Error('cancelled');
     const asset = result.assets[0];
-    const isPdf = asset.mimeType === 'application/pdf';
-    const ext = isPdf ? 'pdf' : (asset.name?.split('.').pop() ?? 'jpg');
-    return { uri: asset.uri, contentType: asset.mimeType ?? `image/${ext}`, ext };
+    const ext = asset.uri.split('.').pop() ?? 'jpg';
+    const filePath = `${storagePath}.${ext}`;
+    const { error } = await supabase.storage
+      .from('payment-proofs')
+      .upload(filePath, decode(asset.base64!), { contentType: `image/${ext}`, upsert: true });
+    if (error) throw error;
+    return supabase.storage.from('payment-proofs').getPublicUrl(filePath).data.publicUrl;
   };
 
   // Upload proof of rent payment — marks rent as Paid
   const uploadProofMutation = useMutation({
     mutationFn: async () => {
       if (!user?.id) throw new Error('Not authenticated');
-      const file = await pickFile();
-      if (!file) return;
-
-      // Upload file to storage using FileSystem (supports Android content:// URIs)
-      const tempPath = `${user.id}/rent_${Date.now()}.${file.ext}`;
-      const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
-      const { error: storageError } = await supabase.storage
-        .from('payment-proofs')
-        .upload(tempPath, decode(base64), { contentType: file.contentType, upsert: true });
-      if (storageError) throw storageError;
-      const { data: { publicUrl } } = supabase.storage.from('payment-proofs').getPublicUrl(tempPath);
-
-      // SECURITY DEFINER RPC handles tenant ID resolution, row creation, and status update
+      const publicUrl = await pickAndUploadImage(`${user.id}/rent_${Date.now()}`);
       const { data: result, error } = await supabase.rpc('upload_payment_proof', {
         p_proof_url: publicUrl,
         p_is_services: false,
@@ -199,25 +192,13 @@ export default function TenantHomeScreen() {
       queryClient.invalidateQueries({ queryKey: ['tenant-current-payment', user?.id] });
       queryClient.invalidateQueries({ queryKey: ['tenant-payments', user?.id] });
     },
-    onError: (err: any) => AppAlert.alert('Error', err.message),
+    onError: (err: any) => { if (err.message !== 'cancelled') AppAlert.alert('Error', err.message); },
   });
 
   const uploadServicesProofMutation = useMutation({
     mutationFn: async () => {
       if (!user?.id) throw new Error('Not authenticated');
-      const file = await pickFile();
-      if (!file) return;
-
-      // Upload file to storage using FileSystem (supports Android content:// URIs)
-      const tempPath = `${user.id}/services_${Date.now()}.${file.ext}`;
-      const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
-      const { error: storageError } = await supabase.storage
-        .from('payment-proofs')
-        .upload(tempPath, decode(base64), { contentType: file.contentType, upsert: true });
-      if (storageError) throw storageError;
-      const { data: { publicUrl } } = supabase.storage.from('payment-proofs').getPublicUrl(tempPath);
-
-      // SECURITY DEFINER RPC handles tenant ID resolution, row creation — no status change
+      const publicUrl = await pickAndUploadImage(`${user.id}/services_${Date.now()}`);
       const { data: result, error } = await supabase.rpc('upload_payment_proof', {
         p_proof_url: publicUrl,
         p_is_services: true,
