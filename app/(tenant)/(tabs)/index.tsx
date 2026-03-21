@@ -10,6 +10,7 @@ import { supabase } from '../../../src/services/supabase';
 import { Card, Button, Badge, ConfirmDialog } from '../../../src/components/ui';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 import { decode } from 'base64-arraybuffer';
 import { colors, spacing, typography } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
@@ -176,13 +177,12 @@ export default function TenantHomeScreen() {
       const file = await pickFile();
       if (!file) return;
 
-      // Upload file to storage first
+      // Upload file to storage using FileSystem (supports Android content:// URIs)
       const tempPath = `${user.id}/rent_${Date.now()}.${file.ext}`;
-      const response = await fetch(file.uri);
-      const blob = await response.blob();
+      const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
       const { error: storageError } = await supabase.storage
         .from('payment-proofs')
-        .upload(tempPath, blob, { contentType: file.contentType, upsert: true });
+        .upload(tempPath, decode(base64), { contentType: file.contentType, upsert: true });
       if (storageError) throw storageError;
       const { data: { publicUrl } } = supabase.storage.from('payment-proofs').getPublicUrl(tempPath);
 
@@ -208,13 +208,12 @@ export default function TenantHomeScreen() {
       const file = await pickFile();
       if (!file) return;
 
-      // Upload file to storage first
+      // Upload file to storage using FileSystem (supports Android content:// URIs)
       const tempPath = `${user.id}/services_${Date.now()}.${file.ext}`;
-      const response = await fetch(file.uri);
-      const blob = await response.blob();
+      const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
       const { error: storageError } = await supabase.storage
         .from('payment-proofs')
-        .upload(tempPath, blob, { contentType: file.contentType, upsert: true });
+        .upload(tempPath, decode(base64), { contentType: file.contentType, upsert: true });
       if (storageError) throw storageError;
       const { data: { publicUrl } } = supabase.storage.from('payment-proofs').getPublicUrl(tempPath);
 
