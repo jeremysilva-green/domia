@@ -170,25 +170,29 @@ export default function OnboardingScreen() {
       return;
     }
 
+    const doCompleteAndNavigate = async () => {
+      try {
+        await completeOnboarding({
+          displayName: owner?.full_name || '',
+          planType: selectedPlan!,
+          productId: PLAN_PRODUCT_IDS[selectedPlan!],
+        });
+        router.replace('/(app)/(tabs)');
+      } catch (e: any) {
+        Alert.alert('Error', e.message);
+      }
+    };
+
     purchasePlan(
       selectedPlan,
-      async () => {
-        // On success — save to DB; the useEffect above handles navigation
-        try {
-          await completeOnboarding({
-            displayName: owner?.full_name || '',
-            planType: selectedPlan,
-            productId: PLAN_PRODUCT_IDS[selectedPlan],
-          });
-          // fetchOwnerProfile is called inside completeOnboarding, but call
-          // it again explicitly here so the useEffect sees the updated state.
-          await fetchOwnerProfile();
-        } catch (e: any) {
-          Alert.alert('Error', e.message);
+      doCompleteAndNavigate,
+      async (msg) => {
+        // If the user already owns this subscription, complete onboarding and navigate
+        if (msg.includes('already') || msg.includes('E_ALREADY_OWNED') || msg.includes('ItemAlreadyOwned')) {
+          await doCompleteAndNavigate();
+        } else {
+          Alert.alert(t.onboarding.purchaseError, msg);
         }
-      },
-      (msg) => {
-        Alert.alert(t.onboarding.purchaseError, msg);
       }
     );
   };
