@@ -156,20 +156,11 @@ export default function TenantHomeScreen() {
     return { daysInMora, accumulatedFine: daysInMora * finePerDay, finePerDay };
   }, [currentPayment, connectionRequest]);
 
-  // Resolve the real tenants.id for the connected tenant user.
-  // Owners create tenant rows with auto-generated UUIDs, so auth.uid()
-  // may not equal tenants.id. We look it up via the approved connection.
+  // Resolve the real tenants.id via a SECURITY DEFINER RPC that bypasses RLS.
+  // Handles all cases: self-registered tenants, owner-created tenants with/without unit.
   const getActualTenantId = async (): Promise<string> => {
-    if (connectionRequest?.unit_id && connectionRequest?.owner_id) {
-      const { data } = await supabase
-        .from('tenants')
-        .select('id')
-        .eq('unit_id', connectionRequest.unit_id)
-        .eq('owner_id', connectionRequest.owner_id)
-        .single();
-      if (data?.id) return data.id;
-    }
-    return user!.id;
+    const { data } = await supabase.rpc('get_my_tenant_record_id');
+    return data || user!.id;
   };
 
   // Pick a file (image or PDF) and return { uri, contentType, ext }
