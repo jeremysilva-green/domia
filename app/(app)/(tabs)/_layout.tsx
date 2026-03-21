@@ -782,12 +782,12 @@ function NotificationsContent() {
     queryKey: ['owner-payment-proofs', owner?.id],
     queryFn: async () => {
       if (!owner?.id) return [];
+      // Fetch payments that have an unseen rent proof OR unseen services proof
       const { data } = await supabase
         .from('rent_payments')
         .select('*, tenant:tenants!inner(id, full_name, owner_id)')
         .eq('tenant.owner_id', owner.id)
-        .not('proof_image_url', 'is', null)
-        .eq('proof_seen_by_owner', false)
+        .or('and(proof_image_url.not.is.null,proof_seen_by_owner.eq.false),and(services_proof_image_url.not.is.null,services_proof_seen_by_owner.eq.false)')
         .order('updated_at', { ascending: false });
       return (data || []) as any[];
     },
@@ -797,16 +797,31 @@ function NotificationsContent() {
   });
 
   const confirmPaymentMutation = useMutation({
-    mutationFn: async (paymentId: string) => {
+    mutationFn: async ({ paymentId, amountDue }: { paymentId: string; amountDue: number }) => {
       const today = new Date().toISOString().split('T')[0];
       const { error } = await supabase
         .from('rent_payments')
-        .update({ status: 'paid', paid_date: today, proof_seen_by_owner: true })
+        .update({ status: 'paid', paid_date: today, proof_seen_by_owner: true, amount_paid: amountDue })
         .eq('id', paymentId);
       if (error) throw error;
     },
     onSuccess: () => {
       playSound('paid');
+      queryClient.invalidateQueries({ queryKey: ['owner-payment-proofs', owner?.id] });
+      queryClient.invalidateQueries({ queryKey: ['unseen-payment-proofs-count', owner?.id] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+    },
+  });
+
+  const confirmServicesProofMutation = useMutation({
+    mutationFn: async (paymentId: string) => {
+      const { error } = await supabase
+        .from('rent_payments')
+        .update({ services_proof_seen_by_owner: true } as any)
+        .eq('id', paymentId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['owner-payment-proofs', owner?.id] });
       queryClient.invalidateQueries({ queryKey: ['unseen-payment-proofs-count', owner?.id] });
     },
@@ -1059,18 +1074,44 @@ function NotificationsContent() {
                       </View>
                       <Badge label={t.payments.pendingConfirmation} variant="warning" size="sm" />
                     </View>
-                    <TouchableOpacity onPress={() => setProofPreviewUrl(payment.proof_image_url)}>
-                      <Image source={{ uri: payment.proof_image_url }} style={contentStyles.proofThumbnail} resizeMode="cover" />
-                    </TouchableOpacity>
-                    <View style={contentStyles.notifActions}>
-                      <Button
-                        title={t.payments.markPaid}
-                        size="sm"
-                        onPress={() => confirmPaymentMutation.mutate(payment.id)}
-                        loading={confirmPaymentMutation.isPending}
-                        style={contentStyles.actionButton}
-                      />
-                    </View>
+
+                    {/* Rent proof */}
+                    {payment.proof_image_url && !payment.proof_seen_by_owner && (
+                      <>
+                        <Text style={contentStyles.proofLabel}>{t.payments.title}</Text>
+                        <TouchableOpacity onPress={() => setProofPreviewUrl(payment.proof_image_url)}>
+                          <Image source={{ uri: payment.proof_image_url }} style={contentStyles.proofThumbnail} resizeMode="cover" />
+                        </TouchableOpacity>
+                        <View style={contentStyles.notifActions}>
+                          <Button
+                            title={t.payments.markPaid}
+                            size="sm"
+                            onPress={() => confirmPaymentMutation.mutate({ paymentId: payment.id, amountDue: payment.amount_due || 0 })}
+                            loading={confirmPaymentMutation.isPending}
+                            style={contentStyles.actionButton}
+                          />
+                        </View>
+                      </>
+                    )}
+
+                    {/* Services proof */}
+                    {payment.services_proof_image_url && !payment.services_proof_seen_by_owner && (
+                      <>
+                        <Text style={contentStyles.proofLabel}>{t.payments.utilities}</Text>
+                        <TouchableOpacity onPress={() => setProofPreviewUrl(payment.services_proof_image_url)}>
+                          <Image source={{ uri: payment.services_proof_image_url }} style={contentStyles.proofThumbnail} resizeMode="cover" />
+                        </TouchableOpacity>
+                        <View style={contentStyles.notifActions}>
+                          <Button
+                            title={t.common.confirm}
+                            size="sm"
+                            onPress={() => confirmServicesProofMutation.mutate(payment.id)}
+                            loading={confirmServicesProofMutation.isPending}
+                            style={contentStyles.actionButton}
+                          />
+                        </View>
+                      </>
+                    )}
                   </Card>
                 ))}
               </View>
@@ -1251,7 +1292,7 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
             id, unit_number, rent_amount, currency,
             tenants (
               id, full_name, email, phone, rent_amount, lease_start, lease_end, status,
-              rent_payments (id, period_month, period_year, amount_due, amount_paid, status, paid_date, due_date),
+              rent_payments (id, period_month, period_year, amount_due, amount_paid, status, paid_date, due_date, proof_image_url, services_proof_image_url),
               maintenance_requests (id)
             )
           )
@@ -1299,7 +1340,7 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
 
             const paymentsHtml = sorted.length > 0 ? `
               <table class="pt">
-                <thead><tr><th>Período</th><th>Monto</th><th>Estado</th><th>Fecha pago</th></tr></thead>
+                <thead><tr><th>Período</th><th>Monto</th><th>Estado</th><th>Fecha pago</th><th>Comprobantes</th></tr></thead>
                 <tbody>
                   ${sorted.map((p: any) => {
                     const period = `${monthNames[(p.period_month || 1) - 1]} ${p.period_year}`;
@@ -1309,7 +1350,10 @@ function SettingsContent({ displayCurrency, onChangeCurrency }: { displayCurrenc
                       const isLate = p.paid_date && p.due_date && new Date(p.paid_date) > new Date(p.due_date);
                       cls = isLate ? 'late' : 'ontime'; lbl = isLate ? 'Con retraso' : 'A tiempo';
                     } else if (p.status === 'overdue') { cls = 'due'; lbl = 'Vencido'; }
-                    return `<tr><td>${period}</td><td>${unit.currency || 'USD'} ${amt}</td><td><span class="b b-${cls}">${lbl}</span></td><td>${p.paid_date || '-'}</td></tr>`;
+                    const rentLink = p.proof_image_url ? `<a href="${p.proof_image_url}" style="color:#2563eb;font-size:10px;">🔗 Comprobante</a>` : '';
+                    const svcLink = p.services_proof_image_url ? `<a href="${p.services_proof_image_url}" style="color:#2563eb;font-size:10px;">🔗 Servicios</a>` : '';
+                    const links = [rentLink, svcLink].filter(Boolean).join(' ');
+                    return `<tr><td>${period}</td><td>${unit.currency || 'USD'} ${amt}</td><td><span class="b b-${cls}">${lbl}</span></td><td>${p.paid_date || '-'}</td><td>${links}</td></tr>`;
                   }).join('')}
                 </tbody>
               </table>` : '';
@@ -2200,6 +2244,7 @@ const contentStyles = StyleSheet.create({
   cancelDeleteBtn: { paddingVertical: spacing.md, alignItems: 'center' },
   cancelDeleteBtnText: { ...typography.body, color: colors.text.secondary },
   proofThumbnail: { width: '100%', height: 160, borderRadius: 8, marginVertical: spacing.sm },
+  proofLabel: { ...typography.bodySmall, color: colors.text.secondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: spacing.sm },
   proofModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' },
   proofModalClose: { position: 'absolute', top: 56, right: 20, zIndex: 10, padding: spacing.sm },
   proofModalImage: { width: '100%', height: '80%' },
