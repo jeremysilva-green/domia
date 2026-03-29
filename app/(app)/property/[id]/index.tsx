@@ -22,7 +22,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../src/services/supabase';
-import { Card, Button, Badge, Input } from '../../../../src/components/ui';
+import { Card, Button, Badge, Input, ConfirmDialog } from '../../../../src/components/ui';
 import { RentIndicator } from '../../../../src/components/shared';
 import { colors, spacing, typography, borderRadius } from '../../../../src/constants/theme';
 import { PropertyWithUnits, RentStatus } from '../../../../src/types';
@@ -50,6 +50,7 @@ export default function PropertyDetailScreen() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [selectedUpgradePlan, setSelectedUpgradePlan] = useState<PlanType | null>(null);
   const [isCheckingLimit, setIsCheckingLimit] = useState(false);
+  const [showDemoLimit, setShowDemoLimit] = useState(false);
   const [isEditingProperty, setIsEditingProperty] = useState(false);
   const [editName, setEditName] = useState('');
   const [editAddress, setEditAddress] = useState('');
@@ -58,7 +59,7 @@ export default function PropertyDetailScreen() {
   const [showUnitMenu, setShowUnitMenu] = useState(false);
 
   const owner = useAuthStore((state) => state.owner);
-  const { upgradePlan } = useAuthStore();
+  const { upgradePlan, isDemoMode } = useAuthStore();
   const { purchasePlan, isPurchasing, initConnection } = useSubscriptionStore();
 
   const currentPlan = (owner as any)?.plan_type as PlanType | null;
@@ -68,6 +69,16 @@ export default function PropertyDetailScreen() {
 
   const handleAddUnit = async () => {
     if (!owner) return;
+    if (isDemoMode) {
+      const { count } = await supabase
+        .from('units')
+        .select('id', { count: 'exact', head: true })
+        .eq('property_id', id);
+      if ((count ?? 0) >= 1) {
+        setShowDemoLimit(true);
+        return;
+      }
+    }
     setIsCheckingLimit(true);
     try {
       const { count } = await supabase
@@ -736,6 +747,16 @@ export default function PropertyDetailScreen() {
           </TouchableOpacity>
         </KeyboardAvoidingView>
       </Modal>
+
+      <ConfirmDialog
+        visible={showDemoLimit}
+        title={t.demo.limitTitle}
+        message={t.demo.limitMessage}
+        confirmText={t.demo.createAccount}
+        cancelText={t.common.cancel}
+        onConfirm={() => { setShowDemoLimit(false); router.push('/(auth)/register'); }}
+        onCancel={() => setShowDemoLimit(false)}
+      />
     </SafeAreaView>
   );
 }

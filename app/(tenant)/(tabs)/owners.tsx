@@ -64,28 +64,13 @@ export default function OwnersListScreen() {
   const { data: properties = [], refetch } = useQuery<PropertyItem[]>({
     queryKey: ['all-properties', searchQuery, isDemoMode],
     queryFn: async (): Promise<PropertyItem[]> => {
-      if (isDemoMode) {
-        // Show only properties owned by demo users (plan_type = 'demo')
-        const { data: demoOwners } = await supabase
-          .from('owners')
-          .select('id')
-          .eq('plan_type', 'demo');
-        const demoOwnerIds = (demoOwners || []).map((o: any) => o.id);
-        if (demoOwnerIds.length === 0) return [];
-
-        let demoQuery = supabase
+      if (isDemoMode && user?.id) {
+        // Only show the demo property created for this specific session
+        const { data, error } = await supabase
           .from('properties')
           .select('id, name, address, city, owner_id, logo_url, owner:owners(full_name, profile_image_url)')
-          .in('owner_id', demoOwnerIds)
+          .eq('owner_id', user.id)
           .order('name', { ascending: true });
-
-        if (searchQuery.trim()) {
-          demoQuery = demoQuery.or(
-            `name.ilike.%${searchQuery.trim()}%,address.ilike.%${searchQuery.trim()}%`
-          );
-        }
-
-        const { data, error } = await demoQuery;
         if (error) throw error;
         return (data ?? []) as PropertyItem[];
       }
