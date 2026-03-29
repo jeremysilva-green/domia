@@ -323,10 +323,42 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           .single();
         if (ownerData) set({ owner: ownerData as Owner });
       } else {
+        // Tenant demo: create an owner profile + demo property owned by this anonymous user.
+        // The demo tenant will connect to their OWN demo property so RLS passes
+        // (tenant_id = auth.uid() = owner_id = auth.uid()).
+        await (supabase.from('owners') as any)
+          .insert({
+            id: user.id,
+            email: `demo-${user.id.slice(0, 8)}@domia.demo`,
+            full_name: 'Demo Owner',
+            onboarding_completed: true,
+            plan_type: 'demo',
+            subscription_status: 'trial',
+            trial_started_at: new Date().toISOString(),
+            subscription_product_id: 'demo',
+          });
+
+        await (supabase.from('properties') as any)
+          .insert({
+            owner_id: user.id,
+            name: 'Demo Property',
+            address: '123 Demo Street',
+            property_type: 'apartment',
+          });
+
+        // Mark profile setup complete so the owners tab doesn't redirect to profile-setup
+        await supabase.auth.updateUser({
+          data: {
+            role,
+            full_name: 'Demo Tenant',
+            profile_setup_completed: true,
+          },
+        });
+
         set({
           tenantProfile: {
             id: user.id,
-            full_name: 'Demo',
+            full_name: 'Demo Tenant',
             email: null,
             phone: null,
             ruc: null,

@@ -43,7 +43,7 @@ type RequestItem = {
 
 export default function OwnersListScreen() {
   const { t } = useI18n();
-  const { user, tenantProfile } = useAuthStore();
+  const { user, tenantProfile, isDemoMode } = useAuthStore();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
@@ -69,7 +69,10 @@ export default function OwnersListScreen() {
         .select('id, name, address, city, owner_id, logo_url, owner:owners(full_name, profile_image_url)')
         .order('name', { ascending: true });
 
-      if (searchQuery.trim()) {
+      // In demo mode, only show the demo property owned by this anonymous user
+      if (isDemoMode && user?.id) {
+        query = query.eq('owner_id', user.id);
+      } else if (searchQuery.trim()) {
         query = query.or(
           `name.ilike.%${searchQuery.trim()}%,address.ilike.%${searchQuery.trim()}%`
         );
