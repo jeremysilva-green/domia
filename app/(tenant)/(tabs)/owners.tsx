@@ -28,6 +28,7 @@ type PropertyItem = {
   address: string;
   city: string | null;
   owner_id: string;
+  logo_url?: string | null;
   owner: { full_name: string; profile_image_url?: string | null } | null;
 };
 
@@ -65,7 +66,7 @@ export default function OwnersListScreen() {
     queryFn: async (): Promise<PropertyItem[]> => {
       let query = supabase
         .from('properties')
-        .select('id, name, address, city, owner_id, owner:owners(full_name, profile_image_url)')
+        .select('id, name, address, city, owner_id, logo_url, owner:owners(full_name, profile_image_url)')
         .order('name', { ascending: true });
 
       if (searchQuery.trim()) {
@@ -279,8 +280,8 @@ export default function OwnersListScreen() {
     return (
       <Card style={styles.propertyCard}>
         <View style={styles.propertyInfo}>
-          {item.owner?.profile_image_url ? (
-            <Image source={{ uri: item.owner.profile_image_url }} style={styles.ownerAvatar} />
+          {item.logo_url ? (
+            <Image source={{ uri: item.logo_url }} style={styles.ownerAvatar} />
           ) : (
             <View style={styles.propertyIcon}>
               <Feather name="home" size={22} color={colors.yellow} />

@@ -86,7 +86,7 @@ export default function EditTenantScreen() {
   }>({});
 
   const { data: tenant, isLoading } = useQuery({
-    queryKey: ['tenant-edit', id],
+    queryKey: ['tenant', id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('tenants')
@@ -115,6 +115,8 @@ export default function EditTenantScreen() {
 
   const updateTenant = useMutation({
     mutationFn: async () => {
+      const tenantId = id || (tenant as any)?.id;
+      if (!tenantId) throw new Error('Tenant ID missing');
       const { error } = await (supabase
         .from('tenants') as any)
         .update({
@@ -127,7 +129,7 @@ export default function EditTenantScreen() {
           lease_start: formatDateForDatabase(leaseStart, isSpanish) || null,
           lease_end: formatDateForDatabase(leaseEnd, isSpanish) || null,
         })
-        .eq('id', id);
+        .eq('id', tenantId);
 
       if (error) throw error;
     },

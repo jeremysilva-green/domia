@@ -144,6 +144,7 @@ export const en = {
     newUnit: 'New Unit',
     createUnit: 'Create Unit',
     monthlyRent: 'Monthly Rent',
+    rentNoCommas: 'No commas or periods',
     unitNumberPlaceholder: 'e.g., 101, A, Ground Floor',
     unitNumberRequired: 'Unit number is required',
     rentAmountRequired: 'Valid rent amount is required',
@@ -450,6 +451,8 @@ export const en = {
     leaseUploadedMsg: 'Your landlord has uploaded a lease document',
     maintenanceInProgress: 'Request In Progress',
     maintenanceCompleted: 'Request Completed',
+    paymentUploaded: 'Payment Submitted',
+    paymentUploadedMsg: 'Proof of payment submitted on',
     clearAll: 'Clear All',
     clearAllConfirm: 'Clear All Notifications',
     clearAllConfirmMsg: 'This will remove all notifications from your inbox.',
@@ -539,6 +542,34 @@ export const en = {
     proofUploaded: 'Proof sent · awaiting confirmation',
     markPaid: 'Mark Paid',
     dueOn: 'Due',
+  },
+
+  // Tenant Score
+  tenantScore: {
+    labels: {
+      top: 'Top',
+      reliable: 'Reliable',
+      risky: 'Risky',
+      highRisk: 'High Risk',
+    },
+    notifications: {
+      top: {
+        title: '🏆 Top Tenant!',
+        body: "You've reached the highest score. Keep up the excellent payment record!",
+      },
+      reliable: {
+        title: '✅ Reliable Tenant',
+        body: 'Great work! Your payment history is solid and your landlord trusts you.',
+      },
+      risky: {
+        title: '⚠️ Risky Rating',
+        body: 'Your score has dropped. Paying on time will help you improve it.',
+      },
+      highRisk: {
+        title: '❌ High Risk',
+        body: 'Your score is very low. Please bring your payments up to date as soon as possible.',
+      },
+    },
   },
 
   // Disconnection requests (owner inbox)

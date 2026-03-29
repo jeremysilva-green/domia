@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Alert, Image, TouchableOpacity, Modal, Linking, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Alert, Image, TouchableOpacity, Modal, Linking, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -13,11 +13,14 @@ import { decode } from 'base64-arraybuffer';
 import { colors, spacing, typography } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
 import { playSound } from '../../../src/utils/sounds';
+import { calcTenantScore } from '../../../src/utils/tenantScore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   schedulePaymentReminders,
   cancelPaymentReminders,
   requestNotificationPermissions,
   setupNotificationChannels,
+  notifyScoreTier,
 } from '../../../src/utils/notificationScheduler';
 import { AppAlert } from '../../../src/components/ui/AppAlert';
 
@@ -91,39 +94,23 @@ export default function TenantHomeScreen() {
     enabled: !!user?.id && connectionRequest?.status === 'approved',
   });
 
-  // Calculate tenant score based on payment history
-  const tenantScore = useMemo(() => {
-    if (!rentPayments || rentPayments.length === 0) {
-      return { score: 0.5, onTimeCount: 0, lateCount: 0, totalPayments: 0 };
-    }
+  // Calculate tenant score using the 100-point penalty formula
+  const tenantScore = useMemo(() => calcTenantScore(rentPayments || []), [rentPayments]);
 
-    const paidPayments = rentPayments.filter((p: any) => p.status === 'paid');
-    if (paidPayments.length === 0) {
-      return { score: 0.5, onTimeCount: 0, lateCount: 0, totalPayments: 0 };
-    }
-
-    let onTimeCount = 0;
-    let lateCount = 0;
-
-    paidPayments.forEach((payment: any) => {
-      if (payment.paid_date && payment.due_date) {
-        const paidDate = new Date(payment.paid_date);
-        const dueDate = new Date(payment.due_date);
-        if (paidDate <= dueDate) {
-          onTimeCount++;
-        } else {
-          lateCount++;
-        }
-      } else {
-        onTimeCount++;
+  // Fire a local notification when the tenant reaches a new score tier
+  useEffect(() => {
+    if (!user?.id || tenantScore.totalPayments === 0) return;
+    const storageKey = `score_tier_${user.id}`;
+    const tier = tenantScore.label;
+    const { title, body } = t.tenantScore.notifications[tier];
+    (async () => {
+      const last = await AsyncStorage.getItem(storageKey);
+      if (last !== tier) {
+        await AsyncStorage.setItem(storageKey, tier);
+        await notifyScoreTier(title, body);
       }
-    });
-
-    const totalPayments = onTimeCount + lateCount;
-    const score = totalPayments > 0 ? onTimeCount / totalPayments : 0.5;
-
-    return { score, onTimeCount, lateCount, totalPayments };
-  }, [rentPayments]);
+    })();
+  }, [tenantScore.label, tenantScore.totalPayments, user?.id]);
 
   // Current payment (most recent by due_date)
   const { data: currentPayment, refetch: refetchCurrentPayment } = useQuery({
@@ -509,6 +496,9 @@ export default function TenantHomeScreen() {
                     {moraData && !currentPayment?.proof_image_url && (
                       <Badge label={`${t.payments.mora} · ${moraData.daysInMora}d`} variant="error" size="sm" />
                     )}
+                    {moraData && !currentPayment?.proof_image_url && moraData.accumulatedFine > 0 && (
+                      <Badge label={`Fine: ${moraData.accumulatedFine}`} variant="error" size="sm" />
+                    )}
                     {(currentPayment?.proof_image_url || currentPayment?.status === 'paid') && !isProofWindowReset ? (
                       <TouchableOpacity onPress={() => setProofModalVisible(true)} style={styles.pagosProofRow}>
                         <Feather name="check-circle" size={14} color="#22c55e" />
@@ -559,19 +549,17 @@ export default function TenantHomeScreen() {
               <Card style={styles.scoreCard}>
                 <View style={styles.scoreHeader}>
                   <Text style={styles.scoreTitle}>{t.tenantDetail.rating}</Text>
-                  <Text style={styles.scoreStats}>
-                    {tenantScore.onTimeCount}/{tenantScore.totalPayments} {t.tenantDetail.onTime}
-                  </Text>
+                  <Text style={styles.scoreStats}>{tenantScore.score}/100 · {t.tenantScore.labels[tenantScore.label]}</Text>
                 </View>
                 <View style={styles.progressBarContainer}>
                   <View style={styles.progressBarBackground}>
                     <View
                       style={[
                         styles.progressBarFill,
-                        { width: `${tenantScore.score * 100}%` },
-                        tenantScore.score >= 0.8 && styles.progressBarHigh,
-                        tenantScore.score >= 0.5 && tenantScore.score < 0.8 && styles.progressBarMedium,
-                        tenantScore.score < 0.5 && styles.progressBarLow,
+                        { width: `${tenantScore.scoreNorm * 100}%` },
+                        tenantScore.score >= 95 && styles.progressBarHigh,
+                        tenantScore.score >= 70 && tenantScore.score < 95 && styles.progressBarMedium,
+                        tenantScore.score < 70 && styles.progressBarLow,
                       ]}
                     />
                   </View>
@@ -623,7 +611,6 @@ export default function TenantHomeScreen() {
             ) : null}
 
             <View style={styles.actionsSection}>
-              <Text style={styles.sectionTitle}>{t.tenantHome.quickActions}</Text>
               <View style={styles.actionsGrid}>
                 <Card
                   style={styles.actionCard}
@@ -636,7 +623,7 @@ export default function TenantHomeScreen() {
                   style={styles.actionCard}
                   onPress={() => {
                     if (leaseImageUrl) {
-                      setLeaseModalVisible(true);
+                      Linking.openURL(leaseImageUrl);
                     } else {
                       setDialog({
                         title: t.tenantHome.viewLease,
@@ -776,6 +763,10 @@ export default function TenantHomeScreen() {
         animationType="slide"
         onRequestClose={() => setDisconnectModalVisible(false)}
       >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
         <View style={styles.disconnectModalOverlay}>
           <View style={styles.disconnectModalCard}>
             <View style={styles.disconnectModalHeader}>
@@ -818,6 +809,7 @@ export default function TenantHomeScreen() {
             </View>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
       <ConfirmDialog
         visible={!!dialog}

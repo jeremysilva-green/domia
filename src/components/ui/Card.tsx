@@ -4,6 +4,7 @@ import { colors, spacing, borderRadius } from '../../constants/theme';
 interface CardProps {
   children: React.ReactNode;
   onPress?: () => void;
+  onLongPress?: () => void;
   style?: ViewStyle;
   variant?: 'default' | 'outlined' | 'elevated';
   padding?: 'none' | 'sm' | 'md' | 'lg';
@@ -12,6 +13,7 @@ interface CardProps {
 export function Card({
   children,
   onPress,
+  onLongPress,
   style,
   variant = 'default',
   padding = 'md',
@@ -23,9 +25,9 @@ export function Card({
     style,
   ];
 
-  if (onPress) {
+  if (onPress || onLongPress) {
     return (
-      <TouchableOpacity style={cardStyle} onPress={onPress} activeOpacity={0.7}>
+      <TouchableOpacity style={cardStyle} onPress={onPress} onLongPress={onLongPress} activeOpacity={0.7}>
         {children}
       </TouchableOpacity>
     );

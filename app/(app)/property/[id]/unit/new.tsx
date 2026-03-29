@@ -127,6 +127,7 @@ export default function NewUnitScreen() {
             value={rentAmount}
             onChangeText={setRentAmount}
             keyboardType="decimal-pad"
+            hint={t.units.rentNoCommas}
             error={errors.rentAmount}
           />
 

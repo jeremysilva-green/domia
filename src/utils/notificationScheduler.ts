@@ -99,6 +99,16 @@ export async function schedulePaymentReminders(
 }
 
 /**
+ * Fire an immediate local notification for a score tier milestone.
+ */
+export async function notifyScoreTier(title: string, body: string) {
+  await Notifications.scheduleNotificationAsync({
+    content: { title, body },
+    trigger: null, // fires immediately
+  });
+}
+
+/**
  * Cancel all scheduled payment reminders (call when payment is marked paid).
  */
 export async function cancelPaymentReminders() {

@@ -8,6 +8,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, useRouter, useLocalSearchParams } from 'expo-router';
@@ -38,6 +39,7 @@ export default function RegisterScreen() {
   }>({});
 
   const { signUp, isLoading } = useAuthStore();
+  const [registered, setRegistered] = useState(false);
   const [dialog, setDialog] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   const validate = () => {
@@ -76,11 +78,7 @@ export default function RegisterScreen() {
 
     try {
       await signUp(email.trim(), password, fullName.trim(), role);
-      setDialog({
-        title: t.auth.accountCreated,
-        message: t.auth.verifyEmail,
-        onConfirm: () => { setDialog(null); router.replace('/(auth)/login'); },
-      });
+      setRegistered(true);
     } catch (error: any) {
       setDialog({
         title: t.auth.registerFailed,
@@ -89,6 +87,24 @@ export default function RegisterScreen() {
       });
     }
   };
+
+  if (registered) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.successContainer}>
+          <Image
+            source={require('../../assets/Domia Logo Crop.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Feather name="mail" size={64} color={colors.yellow} style={styles.mailIcon} />
+          <Text style={styles.successTitle}>{t.auth.accountCreated}</Text>
+          <Text style={styles.successMessage}>{t.auth.verifyEmail}</Text>
+          <ActivityIndicator color={colors.yellow} style={styles.spinner} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -317,6 +333,31 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.text.secondary,
     textAlign: 'center',
+  },
+  successContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  mailIcon: {
+    marginTop: spacing.xl,
+    marginBottom: spacing.lg,
+  },
+  successTitle: {
+    ...typography.h2,
+    color: colors.text.primary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  successMessage: {
+    ...typography.body,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  spinner: {
+    marginTop: spacing.lg,
   },
   errorText: {
     ...typography.caption,

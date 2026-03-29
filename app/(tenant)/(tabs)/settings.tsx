@@ -100,6 +100,15 @@ export default function TenantSettingsScreen() {
         .from('tenants')
         .update({ profile_image_url: publicUrl } as any)
         .eq('id', user!.id);
+
+      // Also update the owner-created tenant record (may have a different UUID)
+      const { data: resolvedId } = await supabase.rpc('get_my_tenant_record_id');
+      if (resolvedId && resolvedId !== user!.id) {
+        await supabase
+          .from('tenants')
+          .update({ profile_image_url: publicUrl } as any)
+          .eq('id', resolvedId);
+      }
     } catch (err: any) {
       AppAlert.alert(t.common.error, err.message || 'Failed to upload photo.');
     } finally {

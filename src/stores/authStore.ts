@@ -1,7 +1,10 @@
 import { create } from 'zustand';
 import { Session, User } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../services/supabase';
 import { Owner, UserRole } from '../types';
+
+const PENDING_EMAIL_CONFIRMATION_KEY = 'domus.pendingEmailConfirmation';
 
 interface TenantProfile {
   id: string;
@@ -24,13 +27,18 @@ interface AuthState {
   userRole: UserRole | null;
   isLoading: boolean;
   isInitialized: boolean;
+  pendingLoginRedirect: boolean;
+  pendingEmailConfirmation: boolean;
 
   initialize: () => Promise<void>;
+  setPendingLoginRedirect: (v: boolean) => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string, role: UserRole) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   setUserRole: (role: UserRole) => void;
+  refreshSession: () => Promise<void>;
+  syncSession: (session: import('@supabase/supabase-js').Session) => Promise<void>;
   fetchOwnerProfile: () => Promise<void>;
   fetchTenantProfile: () => Promise<void>;
   updateTenantProfile: (data: Partial<TenantProfile>) => Promise<void>;
@@ -61,6 +69,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   userRole: null,
   isLoading: false,
   isInitialized: false,
+  pendingLoginRedirect: false,
+  pendingEmailConfirmation: false,
+
+  setPendingLoginRedirect: (v) => set({ pendingLoginRedirect: v }),
 
   initialize: async () => {
     try {
@@ -80,19 +92,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         } else if (role === 'tenant') {
           await get().fetchTenantProfile();
         }
+      } else {
+        // No session — check if user just registered and needs to confirm email
+        const pending = await AsyncStorage.getItem(PENDING_EMAIL_CONFIRMATION_KEY);
+        if (pending) set({ pendingEmailConfirmation: true });
       }
 
-      supabase.auth.onAuthStateChange(async (_event, session) => {
+      supabase.auth.onAuthStateChange((_event, session) => {
         set({ session, user: session?.user ?? null });
         if (session?.user) {
           const role = session.user.user_metadata?.role as UserRole | undefined;
           set({ userRole: role || null });
-
-          if (role === 'owner') {
-            await get().fetchOwnerProfile();
-          } else if (role === 'tenant') {
-            await get().fetchTenantProfile();
-          }
+          // Clear pending confirmation flag — a valid session means the user confirmed their email
+          AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
+          set({ pendingEmailConfirmation: false });
+          // Fire-and-forget — do NOT await here. Supabase awaits all subscribers
+          // inside _notifyAllSubscribers, so awaiting fetchOwnerProfile would block
+          // _callRefreshToken and cause the entire auth flow to hang indefinitely.
+          if (role === 'owner') get().fetchOwnerProfile();
+          else if (role === 'tenant') get().fetchTenantProfile();
         } else {
           set({ owner: null, tenantProfile: null, userRole: null });
         }
@@ -106,39 +124,59 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ userRole: role });
   },
 
+  refreshSession: async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) await get().syncSession(session);
+  },
+
+  syncSession: async (session) => {
+    set({ session, user: session.user });
+    const role = session.user.user_metadata?.role as UserRole | undefined;
+    set({ userRole: role || null });
+    // Clear pending confirmation flag — a valid session means email was confirmed
+    await AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
+    set({ pendingEmailConfirmation: false });
+    if (role === 'owner') await get().fetchOwnerProfile();
+    else if (role === 'tenant') await get().fetchTenantProfile();
+  },
+
   fetchOwnerProfile: async () => {
     const user = get().user;
     if (!user) return;
 
-    // Try to fetch existing owner profile
-    const { data, error } = await supabase
-      .from('owners')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    if (data) {
-      set({ owner: data });
-      return;
-    }
-
-    // If no profile exists, create one from user metadata
-    if (error?.code === 'PGRST116') {
-      const metadata = user.user_metadata;
-      const { data: newOwner, error: insertError } = await (supabase
-        .from('owners') as any)
-        .insert({
-          id: user.id,
-          email: user.email!,
-          full_name: metadata?.full_name || 'Owner',
-          phone: metadata?.phone || null,
-        })
-        .select()
+    try {
+      // Try to fetch existing owner profile
+      const { data, error } = await supabase
+        .from('owners')
+        .select('*')
+        .eq('id', user.id)
         .single();
 
-      if (!insertError && newOwner) {
-        set({ owner: newOwner as Owner });
+      if (data) {
+        set({ owner: data });
+        return;
       }
+
+      // If no profile exists, create one from user metadata
+      if (error?.code === 'PGRST116') {
+        const metadata = user.user_metadata;
+        const { data: newOwner, error: insertError } = await (supabase
+          .from('owners') as any)
+          .insert({
+            id: user.id,
+            email: user.email!,
+            full_name: metadata?.full_name || 'Owner',
+            phone: metadata?.phone || null,
+          })
+          .select()
+          .single();
+
+        if (!insertError && newOwner) {
+          set({ owner: newOwner as Owner });
+        }
+      }
+    } catch (_) {
+      // Network error — owner stays null, index.tsx will retry
     }
   },
 
@@ -210,6 +248,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
       if (error) throw error;
 
+      // Clear the pending confirmation flag — user has signed in successfully
+      await AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
+      set({ pendingEmailConfirmation: false });
+
       // Set role from user metadata
       const role = data.user?.user_metadata?.role as UserRole | undefined;
       set({ userRole: role || null });
@@ -229,11 +271,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             full_name: fullName,
             role: role,
           },
+          emailRedirectTo: 'domus://',
         },
       });
       if (error) throw error;
 
-      set({ userRole: role });
+      // Flag that this user needs to confirm their email before signing in
+      await AsyncStorage.setItem(PENDING_EMAIL_CONFIRMATION_KEY, 'true');
+      set({ userRole: role, pendingEmailConfirmation: true });
 
       // Owner profile is created automatically by database trigger
       // Tenant profile is stored in user metadata
@@ -246,7 +291,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
     try {
       await supabase.auth.signOut();
-      set({ session: null, user: null, owner: null, tenantProfile: null, userRole: null });
+      await AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
+      set({ session: null, user: null, owner: null, tenantProfile: null, userRole: null, pendingEmailConfirmation: false });
     } finally {
       set({ isLoading: false });
     }
@@ -264,10 +310,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   completeOnboarding: async ({ displayName, planType, productId }) => {
     const owner = get().owner;
-    if (!owner) return;
+    if (!owner) throw new Error('Owner profile not loaded. Please restart the app.');
 
-    const { error } = await supabase
-      .from('owners')
+    const { data, error } = await (supabase
+      .from('owners') as any)
       .update({
         onboarding_completed: true,
         display_name: displayName,
@@ -275,12 +321,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         subscription_status: 'trial',
         trial_started_at: new Date().toISOString(),
         subscription_product_id: productId,
-      } as any)
-      .eq('id', owner.id);
+      })
+      .eq('id', owner.id)
+      .select()
+      .single();
 
     if (error) throw error;
+    if (!data) throw new Error('Subscription setup failed. Please try again.');
 
-    await get().fetchOwnerProfile();
+    set({ owner: data });
   },
 
   upgradePlan: async (planType, productId) => {
@@ -300,9 +349,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   deleteAccount: async () => {
     set({ isLoading: true });
     try {
-      const session = get().session;
+      // Refresh the session first so the token is never expired when the function is called
+      const { data: refreshData } = await supabase.auth.refreshSession();
+      const token = refreshData?.session?.access_token ?? get().session?.access_token;
       const { error } = await supabase.functions.invoke('delete-account', {
-        headers: { Authorization: `Bearer ${session?.access_token}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       set({ session: null, user: null, owner: null, tenantProfile: null, userRole: null });

@@ -6,12 +6,16 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   TouchableOpacity,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import * as ImagePicker from 'expo-image-picker';
+import { decode } from 'base64-arraybuffer';
+import { Feather } from '@expo/vector-icons';
 import { supabase } from '../../../src/services/supabase';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { useI18n } from '../../../src/i18n';
@@ -24,12 +28,15 @@ export default function NewPropertyScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
 
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [propertyType, setPropertyType] = useState<PropertyType | null>(null);
+  const [logoUri, setLogoUri] = useState<string | null>(null);
+  const [logoBase64, setLogoBase64] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; address?: string }>({});
 
   const propertyTypes: { label: string; value: PropertyType }[] = [
@@ -38,6 +45,20 @@ export default function NewPropertyScreen() {
     { label: t.properties.condo, value: 'condo' },
     { label: t.properties.commercial, value: 'commercial' },
   ];
+
+  const handlePickLogo = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+      base64: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setLogoUri(result.assets[0].uri);
+      setLogoBase64(result.assets[0].base64 || null);
+    }
+  };
 
   const createProperty = useMutation({
     mutationFn: async () => {
@@ -56,6 +77,23 @@ export default function NewPropertyScreen() {
         .single();
 
       if (error) throw error;
+
+      // Upload logo if selected
+      if (logoBase64 && data) {
+        const fileName = `property-logo-${data.id}-${Date.now()}.jpg`;
+        const { error: uploadError } = await supabase.storage
+          .from('property-images')
+          .upload(fileName, decode(logoBase64), { contentType: 'image/jpeg', upsert: true });
+
+        if (!uploadError) {
+          const { data: urlData } = supabase.storage.from('property-images').getPublicUrl(fileName);
+          await supabase
+            .from('properties')
+            .update({ logo_url: urlData.publicUrl } as any)
+            .eq('id', data.id);
+        }
+      }
+
       return data;
     },
     onSuccess: (data) => {
@@ -71,15 +109,8 @@ export default function NewPropertyScreen() {
 
   const validate = () => {
     const newErrors: typeof errors = {};
-
-    if (!name.trim()) {
-      newErrors.name = t.properties.propertyNameRequired;
-    }
-
-    if (!address.trim()) {
-      newErrors.address = t.properties.addressRequired;
-    }
-
+    if (!name.trim()) newErrors.name = t.properties.propertyNameRequired;
+    if (!address.trim()) newErrors.address = t.properties.addressRequired;
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -109,6 +140,25 @@ export default function NewPropertyScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {/* Logo Upload */}
+          <View style={styles.logoSection}>
+            <TouchableOpacity style={styles.logoButton} onPress={handlePickLogo}>
+              {logoUri ? (
+                <Image source={{ uri: logoUri }} style={styles.logoPreview} />
+              ) : (
+                <View style={styles.logoPlaceholder}>
+                  <Feather name="image" size={28} color={colors.text.secondary} />
+                </View>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.logoTextButton} onPress={handlePickLogo}>
+              <Feather name="upload" size={14} color={colors.yellow} />
+              <Text style={styles.logoTextButtonLabel}>
+                {language === 'es' ? 'Subir Logotipo' : 'Upload Logo'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <Input
             label={t.properties.propertyName}
             placeholder={t.properties.propertyNamePlaceholder}
@@ -201,6 +251,43 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.lg,
+  },
+  logoSection: {
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  logoButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    overflow: 'hidden',
+  },
+  logoPreview: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  logoPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoTextButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  logoTextButtonLabel: {
+    ...typography.bodySmall,
+    color: colors.yellow,
+    fontWeight: '600',
   },
   typeSection: {
     marginBottom: spacing.lg,

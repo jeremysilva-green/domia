@@ -266,6 +266,7 @@ export default function UnitDetailScreen() {
                 value={editRentAmount}
                 onChangeText={setEditRentAmount}
                 keyboardType="decimal-pad"
+                hint={t.units.rentNoCommas}
               />
 
               <Input

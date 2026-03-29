@@ -81,6 +81,7 @@ export interface Database {
           city: string | null;
           property_type: 'house' | 'apartment' | 'condo' | 'commercial' | null;
           image_url: string | null;
+          logo_url: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -92,6 +93,7 @@ export interface Database {
           city?: string | null;
           property_type?: 'house' | 'apartment' | 'condo' | 'commercial' | null;
           image_url?: string | null;
+          logo_url?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -103,6 +105,7 @@ export interface Database {
           city?: string | null;
           property_type?: 'house' | 'apartment' | 'condo' | 'commercial' | null;
           image_url?: string | null;
+          logo_url?: string | null;
           created_at?: string;
           updated_at?: string;
         };

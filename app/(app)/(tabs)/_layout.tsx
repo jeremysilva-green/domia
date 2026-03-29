@@ -1,5 +1,8 @@
 // Force rebundle: 2026-02-04T21:30:00 - All yellow colors are now #facc15
 import { useRef, useCallback, useState, useEffect } from 'react';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList, RefreshControl, Image, Modal, Alert, ActivityIndicator, Linking, TextInput } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -29,9 +32,6 @@ import { CURRENCIES, Currency, getCurrencySymbol, getCurrencyLabel, formatMonthl
 import { prefillPhone } from '../../../src/utils/phoneCountryCode';
 import { playSound } from '../../../src/utils/sounds';
 import { setupNotificationChannels, requestNotificationPermissions } from '../../../src/utils/notificationScheduler';
-import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
-import { decode } from 'base64-arraybuffer';
 import { AppAlert } from '../../../src/components/ui/AppAlert';
 
 // ============================================
@@ -198,11 +198,13 @@ function DashboardContent({ displayCurrency }: { displayCurrency: Currency }) {
             const rentAmount = u.rent_amount || 0;
             return sum + convertToDisplayCurrency(rentAmount, unitCurrency, displayCurrency, exchangeRates);
           }, 0),
-        totalRentCollected: payments.reduce((sum, p: any) => {
-          const unitId = tenantUnitMap[p.tenant_id];
-          const currency = unitCurrencyMap[unitId] || 'USD';
-          return sum + convertToDisplayCurrency(p.amount_paid || 0, currency, displayCurrency, exchangeRates);
-        }, 0),
+        totalRentCollected: payments
+          .filter((p: any) => p.status === 'paid')
+          .reduce((sum, p: any) => {
+            const unitId = tenantUnitMap[p.tenant_id];
+            const currency = unitCurrencyMap[unitId] || 'USD';
+            return sum + convertToDisplayCurrency(p.amount_paid || p.amount_due || 0, currency, displayCurrency, exchangeRates);
+          }, 0),
         latePaymentsCount: payments.filter((p) => p.status === 'late').length,
         activeMaintenanceCount: maintenance.length,
         propertiesCount: properties.length,
@@ -387,7 +389,7 @@ function DashboardContent({ displayCurrency }: { displayCurrency: Currency }) {
 // PROPERTIES CONTENT
 // ============================================
 
-function PropertyCard({ property }: { property: PropertyWithUnits }) {
+function PropertyCard({ property, onLongPress }: { property: PropertyWithUnits; onLongPress: () => void }) {
   const router = useRouter();
   const occupiedCount = property.units.filter((u: any) =>
     Array.isArray(u.tenants) ? u.tenants.some((t: any) => t.status === 'active') : u.status === 'occupied'
@@ -395,8 +397,19 @@ function PropertyCard({ property }: { property: PropertyWithUnits }) {
   const totalCount = property.units.length;
 
   return (
-    <Card style={contentStyles.propertyCard} onPress={() => router.push(`/(app)/property/${property.id}`)}>
+    <Card
+      style={contentStyles.propertyCard}
+      onPress={() => router.push(`/(app)/property/${property.id}`)}
+      onLongPress={onLongPress}
+    >
       <View style={contentStyles.propertyHeader}>
+        {(property as any).logo_url ? (
+          <Image source={{ uri: (property as any).logo_url }} style={contentStyles.propertyLogo} />
+        ) : (
+          <View style={contentStyles.propertyLogoPlaceholder}>
+            <Feather name="home" size={20} color={colors.yellow} />
+          </View>
+        )}
         <View style={contentStyles.propertyInfo}>
           <Text style={contentStyles.propertyName}>{property.name}</Text>
           <Text style={contentStyles.propertyAddress}>{property.address}</Text>
@@ -414,7 +427,8 @@ function PropertyCard({ property }: { property: PropertyWithUnits }) {
 function PropertiesContent() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const { data: properties, isLoading, refetch } = useQuery<PropertyWithUnits[]>({
@@ -434,6 +448,37 @@ function PropertiesContent() {
     refetchOnMount: 'always',
     refetchInterval: 15000,
   });
+
+  const [logoProperty, setLogoProperty] = useState<PropertyWithUnits | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  const handleChangeLogo = async () => {
+    if (!logoProperty) return;
+    setLogoProperty(null);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+      base64: true,
+    });
+    if (result.canceled || !result.assets[0]?.base64) return;
+    setUploadingLogo(true);
+    try {
+      const fileName = `property-logo-${logoProperty.id}-${Date.now()}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from('property-images')
+        .upload(fileName, decode(result.assets[0].base64), { contentType: 'image/jpeg', upsert: true });
+      if (uploadError) throw uploadError;
+      const { data: urlData } = supabase.storage.from('property-images').getPublicUrl(fileName);
+      await supabase.from('properties').update({ logo_url: urlData.publicUrl } as any).eq('id', logoProperty.id);
+      queryClient.invalidateQueries({ queryKey: ['properties', user?.id] });
+    } catch (e: any) {
+      AppAlert.alert(t.common.error, e.message);
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -482,12 +527,32 @@ function PropertiesContent() {
       <FlatList
         data={filteredProperties}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <PropertyCard property={item} />}
+        renderItem={({ item }) => (
+          <PropertyCard property={item} onLongPress={() => setLogoProperty(item)} />
+        )}
         contentContainerStyle={contentStyles.list}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={!isLoading ? renderEmpty : null}
       />
+
+      {/* Change Logo modal */}
+      <Modal visible={!!logoProperty} transparent animationType="fade" onRequestClose={() => setLogoProperty(null)}>
+        <TouchableOpacity style={contentStyles.logoModalOverlay} activeOpacity={1} onPress={() => setLogoProperty(null)}>
+          <View style={contentStyles.logoModalSheet}>
+            <Text style={contentStyles.logoModalTitle}>{logoProperty?.name}</Text>
+            <TouchableOpacity style={contentStyles.logoModalOption} onPress={handleChangeLogo}>
+              <Feather name="image" size={20} color={colors.yellow} />
+              <Text style={contentStyles.logoModalOptionText}>
+                {language === 'es' ? 'Cambiar Logotipo' : 'Change Logo'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={contentStyles.logoModalCancel} onPress={() => setLogoProperty(null)}>
+              <Text style={contentStyles.logoModalCancelText}>{t.common.cancel}</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -785,7 +850,7 @@ function NotificationsContent() {
       // Fetch payments that have an unseen rent proof OR unseen services proof
       const { data } = await supabase
         .from('rent_payments')
-        .select('*, tenant:tenants!inner(id, full_name, owner_id)')
+        .select('*, tenant:tenants!inner(id, full_name, owner_id, rent_amount)')
         .eq('tenant.owner_id', owner.id)
         .or('and(proof_image_url.not.is.null,proof_seen_by_owner.eq.false),and(services_proof_image_url.not.is.null,services_proof_seen_by_owner.eq.false)')
         .order('updated_at', { ascending: false });
@@ -1086,7 +1151,7 @@ function NotificationsContent() {
                           <Button
                             title={t.payments.markPaid}
                             size="sm"
-                            onPress={() => confirmPaymentMutation.mutate({ paymentId: payment.id, amountDue: payment.amount_due || 0 })}
+                            onPress={() => confirmPaymentMutation.mutate({ paymentId: payment.id, amountDue: payment.amount_due || payment.tenant?.rent_amount || 0 })}
                             loading={confirmPaymentMutation.isPending}
                             style={contentStyles.actionButton}
                           />
@@ -1805,6 +1870,21 @@ export default function TabsLayout() {
           queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
         }
       )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'tenants', filter: `owner_id=eq.${owner.id}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['expiring-leases'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+          queryClient.invalidateQueries({ queryKey: ['maintenance-requests'] });
+          queryClient.invalidateQueries({ queryKey: ['owner-payment-proofs'] });
+          queryClient.invalidateQueries({ queryKey: ['connection-requests'] });
+          queryClient.invalidateQueries({ queryKey: ['properties'] });
+          queryClient.invalidateQueries({ queryKey: ['properties-with-units'] });
+          queryClient.invalidateQueries({ queryKey: ['unseen-payment-proofs-count'] });
+          queryClient.invalidateQueries({ queryKey: ['unseen-connections-count'] });
+          queryClient.invalidateQueries({ queryKey: ['unseen-maintenance-count'] });
+        }
+      )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [owner?.id, queryClient]);
@@ -2084,7 +2164,9 @@ const contentStyles = StyleSheet.create({
   searchInput: { flex: 1, height: 40, ...typography.body, color: colors.text.primary },
   list: { padding: spacing.lg, paddingTop: 0 },
   propertyCard: { marginBottom: spacing.md, backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#facc1566' },
-  propertyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  propertyHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  propertyLogo: { width: 44, height: 44, borderRadius: 22, flexShrink: 0 },
+  propertyLogoPlaceholder: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(250,204,21,0.1)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   propertyInfo: { flex: 1 },
   propertyName: { ...typography.h3, color: colors.text.primary },
   propertyAddress: { ...typography.bodySmall, color: colors.text.secondary, marginTop: 2 },
@@ -2094,6 +2176,13 @@ const contentStyles = StyleSheet.create({
   emptyTitle: { ...typography.h3, color: colors.text.primary, marginBottom: spacing.xs, marginTop: spacing.md },
   emptySubtitle: { ...typography.body, color: colors.text.secondary, textAlign: 'center', marginBottom: spacing.lg },
   emptyButton: { marginTop: spacing.md },
+  logoModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  logoModalSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.sm },
+  logoModalTitle: { ...typography.h3, color: colors.text.primary, marginBottom: spacing.xs },
+  logoModalOption: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  logoModalOptionText: { ...typography.body, color: colors.yellow, fontWeight: '600' },
+  logoModalCancel: { paddingVertical: spacing.md, alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border },
+  logoModalCancelText: { ...typography.body, color: colors.text.secondary, fontWeight: '500' },
   filtersContainer: { flexDirection: 'row', paddingHorizontal: spacing.lg, marginBottom: spacing.md, gap: spacing.xs },
   filterButton: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: borderRadius.full, backgroundColor: colors.surfaceLight },
   filterButtonActive: { backgroundColor: '#facc15' },

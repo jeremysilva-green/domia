@@ -7,7 +7,6 @@ import {
   RefreshControl,
   TouchableOpacity,
   Linking,
-  Alert,
   Image,
   Modal,
   ActivityIndicator,
@@ -15,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -28,6 +27,7 @@ import { TenantWithDetails, RentPayment } from '../../../../src/types';
 import { useI18n } from '../../../../src/i18n';
 import { formatCurrency } from '../../../../src/utils/currency';
 import { AppAlert } from '../../../../src/components/ui/AppAlert';
+import { calcTenantScore } from '../../../../src/utils/tenantScore';
 
 export default function TenantDetailScreen() {
   const { t, language } = useI18n();
@@ -174,39 +174,10 @@ export default function TenantDetailScreen() {
   }, [tenant?.rent_payments, currentMonth, currentYear]);
 
   // Calculate tenant score based on payment history
-  const tenantScore = useMemo(() => {
-    if (!tenant?.rent_payments || tenant.rent_payments.length === 0) {
-      return { score: 0.5, onTimeCount: 0, lateCount: 0, totalPayments: 0 };
-    }
-
-    const payments = tenant.rent_payments.filter((p: RentPayment) => p.status === 'paid');
-    if (payments.length === 0) {
-      return { score: 0.5, onTimeCount: 0, lateCount: 0, totalPayments: 0 };
-    }
-
-    let onTimeCount = 0;
-    let lateCount = 0;
-
-    payments.forEach((payment: RentPayment) => {
-      if (payment.paid_date && payment.due_date) {
-        const paidDate = new Date(payment.paid_date);
-        const dueDate = new Date(payment.due_date);
-        if (paidDate <= dueDate) {
-          onTimeCount++;
-        } else {
-          lateCount++;
-        }
-      } else {
-        // If no due date, assume on time
-        onTimeCount++;
-      }
-    });
-
-    const totalPayments = onTimeCount + lateCount;
-    const score = totalPayments > 0 ? onTimeCount / totalPayments : 0.5;
-
-    return { score, onTimeCount, lateCount, totalPayments };
-  }, [tenant?.rent_payments]);
+  const tenantScore = useMemo(
+    () => calcTenantScore(tenant?.rent_payments || []),
+    [tenant?.rent_payments]
+  );
 
   const deleteTenant = useMutation({
     mutationFn: async () => {
@@ -226,6 +197,10 @@ export default function TenantDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['property'] });
       queryClient.invalidateQueries({ queryKey: ['properties-with-units'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['expiring-leases'] });
+      queryClient.invalidateQueries({ queryKey: ['maintenance-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['owner-payment-proofs'] });
+      queryClient.invalidateQueries({ queryKey: ['connection-requests'] });
       router.back();
     },
     onError: (error: any) => {
@@ -280,17 +255,12 @@ export default function TenantDetailScreen() {
   });
 
   const handlePickLeaseImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      AppAlert.alert(t.properties.permissionRequired, t.properties.permissionMessage);
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.85,
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'application/pdf',
+      copyToCacheDirectory: true,
     });
     if (!result.canceled && result.assets[0]) {
-      uploadLease.mutate({ uri: result.assets[0].uri, mimeType: 'image/jpeg' });
+      uploadLease.mutate({ uri: result.assets[0].uri, mimeType: 'application/pdf' });
     }
   };
 
@@ -589,7 +559,7 @@ export default function TenantDetailScreen() {
               <View style={styles.scoreHeader}>
                 <Text style={styles.scoreTitle}>{t.tenantDetail.rating}</Text>
                 <Text style={styles.scoreStats}>
-                  {tenantScore.onTimeCount}/{tenantScore.totalPayments} {t.tenantDetail.onTime}
+                  {tenantScore.score}/100 · {t.tenantScore.labels[tenantScore.label]}
                 </Text>
               </View>
               <View style={styles.progressBarContainer}>
@@ -597,10 +567,10 @@ export default function TenantDetailScreen() {
                   <View
                     style={[
                       styles.progressBarFill,
-                      { width: `${tenantScore.score * 100}%` },
-                      tenantScore.score >= 0.8 && styles.progressBarHigh,
-                      tenantScore.score >= 0.5 && tenantScore.score < 0.8 && styles.progressBarMedium,
-                      tenantScore.score < 0.5 && styles.progressBarLow,
+                      { width: `${tenantScore.scoreNorm * 100}%` },
+                      tenantScore.score >= 95 && styles.progressBarHigh,
+                      tenantScore.score >= 70 && tenantScore.score < 95 && styles.progressBarMedium,
+                      tenantScore.score < 70 && styles.progressBarLow,
                     ]}
                   />
                 </View>

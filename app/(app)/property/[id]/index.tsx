@@ -7,6 +7,7 @@ import {
   RefreshControl,
   TouchableOpacity,
   Alert,
+  Image,
   ImageBackground,
   Modal,
   ActivityIndicator,
@@ -135,7 +136,8 @@ export default function PropertyDetailScreen() {
               full_name,
               status,
               rent_amount,
-              lease_end
+              lease_end,
+              profile_image_url
             )
           )
         `
@@ -144,6 +146,24 @@ export default function PropertyDetailScreen() {
         .single();
 
       if (error) throw error;
+
+      // Build a map of unit_id → profile_image_url by querying all tenant records
+      // for these units. There can be two records per unit (owner-created + auth-uid),
+      // and the photo lives on the auth-uid record. This catches it regardless.
+      const unitIds = data.units.map((u: any) => u.id);
+      const unitToProfileMap: Record<string, string> = {};
+      if (unitIds.length > 0) {
+        const { data: unitTenants } = await supabase
+          .from('tenants')
+          .select('unit_id, profile_image_url')
+          .in('unit_id', unitIds)
+          .not('profile_image_url', 'is', null);
+        for (const t of (unitTenants || [])) {
+          if (t.unit_id && t.profile_image_url) {
+            unitToProfileMap[t.unit_id] = t.profile_image_url;
+          }
+        }
+      }
 
       // Calculate rent status for each unit's tenant
       const unitsWithStatus = await Promise.all(
@@ -168,6 +188,7 @@ export default function PropertyDetailScreen() {
             ...unit,
             tenant: {
               ...activeTenant,
+              profile_image_url: unitToProfileMap[unit.id] ?? activeTenant.profile_image_url,
               current_rent_status: (payment?.status || 'due') as RentStatus,
             },
           };
@@ -515,16 +536,30 @@ export default function PropertyDetailScreen() {
 
                     {unit.tenant ? (
                       <View style={styles.tenantRow}>
-                        <View style={styles.tenantInfo}>
-                          <Text style={styles.tenantName}>
-                            {unit.tenant.full_name || t.properties.unnamedTenant}
-                          </Text>
-                          <Text style={styles.tenantLease}>
-                            {t.properties.leaseEnds}{' '}
-                            {unit.tenant.lease_end
-                              ? new Date(unit.tenant.lease_end).toLocaleDateString()
-                              : t.common.notSet}
-                          </Text>
+                        <View style={styles.tenantAvatarInfo}>
+                          {unit.tenant.profile_image_url ? (
+                            <Image
+                              source={{ uri: unit.tenant.profile_image_url }}
+                              style={styles.tenantAvatar}
+                            />
+                          ) : (
+                            <View style={styles.tenantAvatarPlaceholder}>
+                              <Text style={styles.tenantAvatarInitial}>
+                                {(unit.tenant.full_name || t.properties.unnamedTenant).charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
+                          <View style={styles.tenantInfo}>
+                            <Text style={styles.tenantName}>
+                              {unit.tenant.full_name || t.properties.unnamedTenant}
+                            </Text>
+                            <Text style={styles.tenantLease}>
+                              {t.properties.leaseEnds}{' '}
+                              {unit.tenant.lease_end
+                                ? new Date(unit.tenant.lease_end).toLocaleDateString()
+                                : t.common.notSet}
+                            </Text>
+                          </View>
                         </View>
                         <RentIndicator
                           status={unit.tenant.current_rent_status || 'due'}
@@ -875,6 +910,30 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+  tenantAvatarInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  tenantAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  tenantAvatarPlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.gray[700],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tenantAvatarInitial: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.text.primary,
   },
   tenantInfo: {
     flex: 1,

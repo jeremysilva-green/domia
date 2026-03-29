@@ -11,6 +11,7 @@ import { useAuthStore } from '../../../src/stores/authStore';
 import { Card, ConfirmDialog } from '../../../src/components/ui';
 import { colors, spacing, typography } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
+import { playSound } from '../../../src/utils/sounds';
 
 type NotificationItem = {
   id: string;
@@ -19,7 +20,8 @@ type NotificationItem = {
     | 'connection_rejected'
     | 'lease_uploaded'
     | 'maintenance_in_progress'
-    | 'maintenance_completed';
+    | 'maintenance_completed'
+    | 'payment_uploaded';
   title: string;
   message: string;
   timestamp: string | null;
@@ -32,6 +34,7 @@ const ICON_CONFIG: Record<NotificationItem['type'], { icon: string; color: strin
   lease_uploaded:         { icon: 'file-text',    color: colors.yellow },
   maintenance_in_progress:{ icon: 'clock',        color: '#3b82f6' },
   maintenance_completed:  { icon: 'check-circle', color: colors.success.main },
+  payment_uploaded:       { icon: 'dollar-sign',  color: colors.success.main },
 };
 
 export default function TenantInboxScreen() {
@@ -58,7 +61,7 @@ export default function TenantInboxScreen() {
     queryFn: async () => {
       if (!user?.id) return [];
 
-      const [connResult, tenantResult, maintenanceResult] = await Promise.all([
+      const [connResult, tenantResult, maintenanceResult, paymentsResult] = await Promise.all([
         supabase
           .from('connection_requests')
           .select('id, status, seen_by_tenant, updated_at, property:properties(name)')
@@ -76,6 +79,12 @@ export default function TenantInboxScreen() {
           .eq('tenant_id', user.id)
           .in('status', ['in_progress', 'completed'])
           .order('updated_at', { ascending: false }),
+        supabase
+          .from('rent_payments')
+          .select('id, proof_image_url, paid_date, due_date, period_month, period_year')
+          .eq('tenant_id', user.id)
+          .not('proof_image_url', 'is', null)
+          .order('due_date', { ascending: false }),
       ]);
 
       const items: NotificationItem[] = [];
@@ -118,6 +127,22 @@ export default function TenantInboxScreen() {
           message: r.title,
           timestamp: r.updated_at,
           seen: r.seen_by_tenant ?? true,
+        });
+      }
+
+      // Payment proof upload confirmations
+      for (const pay of paymentsResult.data || []) {
+        const p = pay as any;
+        const dateStr = p.paid_date
+          ? format(new Date(p.paid_date), 'MMM d, yyyy')
+          : format(new Date(p.due_date), 'MMM d, yyyy');
+        items.push({
+          id: `payment-${p.id}`,
+          type: 'payment_uploaded',
+          title: t.inbox.paymentUploaded,
+          message: `${t.inbox.paymentUploadedMsg} ${dateStr}`,
+          timestamp: p.paid_date || p.due_date,
+          seen: true,
         });
       }
 
@@ -164,25 +189,38 @@ export default function TenantInboxScreen() {
     markAllSeen();
   }, [isFocused, user?.id, queryClient]);
 
-  // Real-time: refresh inbox when connection or maintenance requests change
+  // Real-time: refresh inbox and play sound when owner takes action
   useEffect(() => {
     if (!user?.id) return;
+
+    const invalidate = () => {
+      queryClient.invalidateQueries({ queryKey: ['tenant-inbox', user.id] });
+      queryClient.invalidateQueries({ queryKey: ['tenant-inbox-count', user.id] });
+    };
 
     const channel = supabase
       .channel(`tenant-inbox-rt-${user.id}`)
       .on('postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'connection_requests', filter: `tenant_id=eq.${user.id}` },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['tenant-inbox', user.id] });
-          queryClient.invalidateQueries({ queryKey: ['tenant-inbox-count', user.id] });
-        }
+        () => { playSound('notification'); invalidate(); }
       )
       .on('postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'maintenance_requests', filter: `tenant_id=eq.${user.id}` },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['tenant-inbox', user.id] });
-          queryClient.invalidateQueries({ queryKey: ['tenant-inbox-count', user.id] });
+        () => { playSound('notification'); invalidate(); }
+      )
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'tenants', filter: `id=eq.${user.id}` },
+        (payload: any) => {
+          // Only play sound when the owner uploads a lease
+          if (payload.new?.lease_image_url && payload.new.lease_image_url !== payload.old?.lease_image_url) {
+            playSound('notification');
+            invalidate();
+          }
         }
+      )
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'rent_payments', filter: `tenant_id=eq.${user.id}` },
+        () => { invalidate(); }
       )
       .subscribe();
 
@@ -235,10 +273,15 @@ export default function TenantInboxScreen() {
           <View style={styles.content}>
             <View style={styles.titleRow}>
               <Text style={styles.itemTitle}>{item.title}</Text>
+              {item.type === 'payment_uploaded' && (
+                <View style={styles.paidBadge}>
+                  <Text style={styles.paidBadgeText}>Paid</Text>
+                </View>
+              )}
               {!item.seen && <View style={styles.unreadDot} />}
             </View>
             <Text style={styles.message} numberOfLines={2}>{item.message}</Text>
-            {item.timestamp && (
+            {item.timestamp && item.type !== 'payment_uploaded' && (
               <Text style={styles.time}>
                 {format(new Date(item.timestamp), 'MMM d, yyyy')}
               </Text>
@@ -364,6 +407,17 @@ const styles = StyleSheet.create({
   time: {
     ...typography.caption,
     color: colors.text.secondary,
+  },
+  paidBadge: {
+    backgroundColor: '#22c55e22',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  paidBadgeText: {
+    ...typography.caption,
+    color: '#22c55e',
+    fontWeight: '700',
   },
   emptyState: {
     alignItems: 'center',

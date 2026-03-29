@@ -146,6 +146,7 @@ export const es: Translations = {
     newUnit: 'Nueva Unidad',
     createUnit: 'Crear Unidad',
     monthlyRent: 'Renta Mensual',
+    rentNoCommas: 'Sin comas ni puntos',
     unitNumberPlaceholder: 'ej., 101, A, Planta Baja',
     unitNumberRequired: 'El número de unidad es requerido',
     rentAmountRequired: 'El monto de renta es requerido',
@@ -452,6 +453,8 @@ export const es: Translations = {
     leaseUploadedMsg: 'Tu arrendador subió un contrato de arrendamiento',
     maintenanceInProgress: 'Solicitud en Proceso',
     maintenanceCompleted: 'Solicitud Completada',
+    paymentUploaded: 'Pago Enviado',
+    paymentUploadedMsg: 'Comprobante de pago enviado el',
     clearAll: 'Limpiar Todo',
     clearAllConfirm: 'Limpiar Notificaciones',
     clearAllConfirmMsg: 'Esto eliminará todas las notificaciones de tu bandeja.',
@@ -541,6 +544,34 @@ export const es: Translations = {
     proofUploaded: 'Comprobante enviado · pendiente de confirmación',
     markPaid: 'Pagó',
     dueOn: 'Vence',
+  },
+
+  // Puntuación de inquilino
+  tenantScore: {
+    labels: {
+      top: 'Top',
+      reliable: 'Responsable',
+      risky: 'Mediocre',
+      highRisk: 'Irresponsable',
+    },
+    notifications: {
+      top: {
+        title: '🏆 ¡Inquilino Top!',
+        body: 'Alcanzaste la puntuación más alta. ¡Sigue así con tus pagos!',
+      },
+      reliable: {
+        title: '✅ Inquilino Responsable',
+        body: '¡Buen trabajo! Tu historial de pagos es sólido y tu arrendador confía en ti.',
+      },
+      risky: {
+        title: '⚠️ Calificación Mediocre',
+        body: 'Tu puntuación bajó. Pagar a tiempo te ayudará a mejorarla.',
+      },
+      highRisk: {
+        title: '❌ Irresponsable',
+        body: 'Tu puntuación es muy baja. Por favor, regulariza tus pagos lo antes posible.',
+      },
+    },
   },
 
   // Solicitudes de desvinculación (bandeja del propietario)
