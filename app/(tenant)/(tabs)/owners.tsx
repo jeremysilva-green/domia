@@ -62,17 +62,40 @@ export default function OwnersListScreen() {
 
   // Fetch all properties with owner info
   const { data: properties = [], refetch } = useQuery<PropertyItem[]>({
-    queryKey: ['all-properties', searchQuery],
+    queryKey: ['all-properties', searchQuery, isDemoMode],
     queryFn: async (): Promise<PropertyItem[]> => {
+      if (isDemoMode) {
+        // Show only properties owned by demo users (plan_type = 'demo')
+        const { data: demoOwners } = await supabase
+          .from('owners')
+          .select('id')
+          .eq('plan_type', 'demo');
+        const demoOwnerIds = (demoOwners || []).map((o: any) => o.id);
+        if (demoOwnerIds.length === 0) return [];
+
+        let demoQuery = supabase
+          .from('properties')
+          .select('id, name, address, city, owner_id, logo_url, owner:owners(full_name, profile_image_url)')
+          .in('owner_id', demoOwnerIds)
+          .order('name', { ascending: true });
+
+        if (searchQuery.trim()) {
+          demoQuery = demoQuery.or(
+            `name.ilike.%${searchQuery.trim()}%,address.ilike.%${searchQuery.trim()}%`
+          );
+        }
+
+        const { data, error } = await demoQuery;
+        if (error) throw error;
+        return (data ?? []) as PropertyItem[];
+      }
+
       let query = supabase
         .from('properties')
         .select('id, name, address, city, owner_id, logo_url, owner:owners(full_name, profile_image_url)')
         .order('name', { ascending: true });
 
-      // In demo mode, only show the demo property owned by this anonymous user
-      if (isDemoMode && user?.id) {
-        query = query.eq('owner_id', user.id);
-      } else if (searchQuery.trim()) {
+      if (searchQuery.trim()) {
         query = query.or(
           `name.ilike.%${searchQuery.trim()}%,address.ilike.%${searchQuery.trim()}%`
         );
