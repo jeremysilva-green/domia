@@ -579,6 +579,19 @@ export const en = {
     acknowledge: 'Disconnect',
     whatsapp: 'WhatsApp Tenant',
   },
+
+  // Demo mode
+  demo: {
+    tryDemo: 'Try Demo',
+    chooseRole: 'Try the app as...',
+    ownerDemo: 'Property Owner',
+    tenantDemo: 'Tenant',
+    badge: 'DEMO',
+    limitTitle: 'Demo Limit Reached',
+    limitMessage: 'Create a free account to manage all your properties without limits.',
+    createAccount: 'Create Account',
+    startingDemo: 'Starting demo...',
+  },
 };
 
 export type Translations = typeof en;

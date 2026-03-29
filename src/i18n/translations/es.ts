@@ -319,7 +319,7 @@ export const es: Translations = {
     pending: 'Pendiente',
     declined: 'Rechazado',
     tryAgain: 'Intentar de Nuevo',
-    sendRequest: 'Enviar Solicitud de Conexión',
+    sendRequest: 'Solicitar Conexión',
     sendRequestConfirm: '¿Quieres conectarte a',
     requestSent: 'Solicitud Enviada',
     requestSentMsg: 'Tu solicitud de conexión ha sido enviada. Se te notificará cuando el propietario responda.',
@@ -580,5 +580,18 @@ export const es: Translations = {
     reason: 'Motivo',
     acknowledge: 'Desvincular',
     whatsapp: 'WhatsApp al Inquilino',
+  },
+
+  // Modo demo
+  demo: {
+    tryDemo: 'Probar Demo',
+    chooseRole: 'Probar la app como...',
+    ownerDemo: 'Propietario',
+    tenantDemo: 'Inquilino',
+    badge: 'DEMO',
+    limitTitle: 'Límite de Demo Alcanzado',
+    limitMessage: 'Crea una cuenta gratuita para gestionar todas tus propiedades sin límites.',
+    createAccount: 'Crear Cuenta',
+    startingDemo: 'Iniciando demo...',
   },
 };

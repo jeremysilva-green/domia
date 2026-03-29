@@ -29,11 +29,13 @@ interface AuthState {
   isInitialized: boolean;
   pendingLoginRedirect: boolean;
   pendingEmailConfirmation: boolean;
+  isDemoMode: boolean;
 
   initialize: () => Promise<void>;
   setPendingLoginRedirect: (v: boolean) => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string, role: UserRole) => Promise<void>;
+  signInAsDemo: (role: UserRole) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   setUserRole: (role: UserRole) => void;
@@ -71,6 +73,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isInitialized: false,
   pendingLoginRedirect: false,
   pendingEmailConfirmation: false,
+  isDemoMode: false,
 
   setPendingLoginRedirect: (v) => set({ pendingLoginRedirect: v }),
 
@@ -100,6 +103,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       supabase.auth.onAuthStateChange((_event, session) => {
         set({ session, user: session?.user ?? null });
+        // Skip role/profile updates in demo mode — signInAsDemo manages state directly
+        if (get().isDemoMode) return;
         if (session?.user) {
           const role = session.user.user_metadata?.role as UserRole | undefined;
           set({ userRole: role || null });
@@ -287,12 +292,63 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
+  signInAsDemo: async (role: UserRole) => {
+    // Set isDemoMode BEFORE signInAnonymously so onAuthStateChange skips role updates
+    set({ isLoading: true, isDemoMode: true });
+    try {
+      // Sign in anonymously — gives a real Supabase session with a unique user ID
+      const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
+      if (authError) {
+        set({ isDemoMode: false });
+        throw authError;
+      }
+      const user = authData.user!;
+
+      set({ session: authData.session, user, userRole: role, isDemoMode: true });
+
+      if (role === 'owner') {
+        // Create owner profile with onboarding completed so index.tsx routes to app dashboard
+        const { data: ownerData } = await (supabase.from('owners') as any)
+          .insert({
+            id: user.id,
+            email: `demo-${user.id.slice(0, 8)}@domia.demo`,
+            full_name: 'Demo',
+            onboarding_completed: true,
+            plan_type: 'demo',
+            subscription_status: 'trial',
+            trial_started_at: new Date().toISOString(),
+            subscription_product_id: 'demo',
+          })
+          .select()
+          .single();
+        if (ownerData) set({ owner: ownerData as Owner });
+      } else {
+        set({
+          tenantProfile: {
+            id: user.id,
+            full_name: 'Demo',
+            email: null,
+            phone: null,
+            ruc: null,
+            razon_social: null,
+            unit_id: null,
+            owner_id: null,
+            status: 'pending',
+            profile_image_url: null,
+          },
+        });
+      }
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
   signOut: async () => {
     set({ isLoading: true });
     try {
       await supabase.auth.signOut();
       await AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
-      set({ session: null, user: null, owner: null, tenantProfile: null, userRole: null, pendingEmailConfirmation: false });
+      set({ session: null, user: null, owner: null, tenantProfile: null, userRole: null, pendingEmailConfirmation: false, isDemoMode: false });
     } finally {
       set({ isLoading: false });
     }

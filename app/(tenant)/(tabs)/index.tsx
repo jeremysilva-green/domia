@@ -28,7 +28,7 @@ export default function TenantHomeScreen() {
   const { t } = useI18n();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { tenantProfile, user } = useAuthStore();
+  const { tenantProfile, user, isDemoMode } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
   const [leaseModalVisible, setLeaseModalVisible] = useState(false);
   const [proofModalVisible, setProofModalVisible] = useState(false);
@@ -399,7 +399,12 @@ export default function TenantHomeScreen() {
             style={styles.headerRight}
             onPress={() => router.push('/(tenant)/(tabs)/settings')}
           >
-            <Text style={styles.tenantName}>{tenantProfile?.full_name?.split(' ')[0] || ''}</Text>
+            {isDemoMode && (
+              <View style={styles.demoBadge}>
+                <Text style={styles.demoBadgeText}>{t.demo.badge}</Text>
+              </View>
+            )}
+            <Text style={styles.tenantName}>{isDemoMode ? 'Demo' : (tenantProfile?.full_name?.split(' ')[0] || '')}</Text>
             {tenantProfile?.profile_image_url ? (
               <Image source={{ uri: tenantProfile.profile_image_url }} style={styles.avatar} />
             ) : (
@@ -852,6 +857,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  demoBadge: {
+    backgroundColor: '#22c55e',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  demoBadgeText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: '#fff',
+    letterSpacing: 0.8,
   },
   tenantName: {
     ...typography.body,

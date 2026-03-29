@@ -152,6 +152,7 @@ function RootLayoutNav() {
         <Stack.Screen name="(onboarding)" />
         <Stack.Screen name="(tenant)" />
         <Stack.Screen name="(public)" />
+        <Stack.Screen name="(demo)" />
       </Stack>
     </>
   );

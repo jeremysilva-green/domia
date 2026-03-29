@@ -133,7 +133,7 @@ function formatDisplayCurrency(amount: number, displayCurrency: Currency): strin
 
 function DashboardContent({ displayCurrency }: { displayCurrency: Currency }) {
   const router = useRouter();
-  const { owner } = useAuthStore();
+  const { owner, isDemoMode } = useAuthStore();
   const { t, language } = useI18n();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -276,7 +276,14 @@ function DashboardContent({ displayCurrency }: { displayCurrency: Currency }) {
             resizeMode="contain"
           />
           <View style={contentStyles.headerAvatarRow}>
-            <Text style={contentStyles.ownerName}>{owner?.full_name || 'Owner'}</Text>
+            <View style={contentStyles.ownerNameRow}>
+              <Text style={contentStyles.ownerName}>{isDemoMode ? 'Demo' : (owner?.full_name || 'Owner')}</Text>
+              {isDemoMode && (
+                <View style={contentStyles.demoBadge}>
+                  <Text style={contentStyles.demoBadgeText}>{t.demo.badge}</Text>
+                </View>
+              )}
+            </View>
             {owner?.profile_image_url ? (
               <Image source={{ uri: owner.profile_image_url }} style={contentStyles.headerAvatar} />
             ) : (
@@ -426,10 +433,11 @@ function PropertyCard({ property, onLongPress }: { property: PropertyWithUnits; 
 
 function PropertiesContent() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, isDemoMode } = useAuthStore();
   const { t, language } = useI18n();
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
+  const [showDemoLimit, setShowDemoLimit] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const { data: properties, isLoading, refetch } = useQuery<PropertyWithUnits[]>({
     queryKey: ['properties', user?.id],
@@ -448,6 +456,14 @@ function PropertiesContent() {
     refetchOnMount: 'always',
     refetchInterval: 15000,
   });
+
+  const handleAddProperty = () => {
+    if (isDemoMode && (properties?.length ?? 0) >= 1) {
+      setShowDemoLimit(true);
+      return;
+    }
+    router.push('/(app)/property/new');
+  };
 
   const [logoProperty, setLogoProperty] = useState<PropertyWithUnits | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -499,7 +515,7 @@ function PropertiesContent() {
       <Text style={contentStyles.emptySubtitle}>{t.properties.noPropertiesSubtitle}</Text>
       <Button
         title={t.properties.addProperty}
-        onPress={() => router.push('/(app)/property/new')}
+        onPress={handleAddProperty}
         style={contentStyles.emptyButton}
       />
     </View>
@@ -509,7 +525,7 @@ function PropertiesContent() {
     <SafeAreaView style={contentStyles.container} edges={['top']}>
       <View style={contentStyles.screenHeader}>
         <Text style={contentStyles.screenTitle}>{t.properties.title}</Text>
-        <TouchableOpacity style={contentStyles.addButton} onPress={() => router.push('/(app)/property/new')}>
+        <TouchableOpacity style={contentStyles.addButton} onPress={handleAddProperty}>
           <Text style={contentStyles.addButtonText}>+ {t.common.add}</Text>
         </TouchableOpacity>
       </View>
@@ -553,6 +569,16 @@ function PropertiesContent() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <ConfirmDialog
+        visible={showDemoLimit}
+        title={t.demo.limitTitle}
+        message={t.demo.limitMessage}
+        confirmText={t.demo.createAccount}
+        cancelText={t.common.cancel}
+        onConfirm={() => { setShowDemoLimit(false); router.push('/(auth)/register'); }}
+        onCancel={() => setShowDemoLimit(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -2132,6 +2158,9 @@ const contentStyles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
   logo: { height: 50, width: 150, marginLeft: -8 },
   ownerName: { ...typography.body, fontWeight: '600', color: colors.text.primary },
+  ownerNameRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: spacing.xs },
+  demoBadge: { backgroundColor: '#22c55e', paddingHorizontal: 8, paddingVertical: 2, borderRadius: borderRadius.full },
+  demoBadgeText: { fontSize: 10, fontWeight: '700' as const, color: '#fff', letterSpacing: 0.8 },
   headerAvatarRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: spacing.sm },
   headerAvatar: { width: 36, height: 36, borderRadius: 18 },
   headerAvatarFallback: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.yellow, alignItems: 'center' as const, justifyContent: 'center' as const },

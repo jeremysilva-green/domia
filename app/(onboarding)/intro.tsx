@@ -134,6 +134,14 @@ export default function IntroScreen() {
           <Text style={s.primaryBtnText}>{t.onboarding.introGetStarted}</Text>
           <Feather name="arrow-right" size={18} color={colors.background} />
         </TouchableOpacity>
+        <TouchableOpacity
+          style={s.demoBtn}
+          onPress={() => router.push('/(demo)/role-select')}
+          activeOpacity={0.85}
+        >
+          <Feather name="play" size={14} color="#22c55e" />
+          <Text style={s.demoBtnText}>{t.demo.tryDemo}</Text>
+        </TouchableOpacity>
         {renderSignInLink()}
       </View>
     </View>
@@ -354,6 +362,18 @@ const s = StyleSheet.create({
     backgroundColor: colors.yellow,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  demoBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: spacing.sm,
+  },
+  demoBtnText: {
+    ...typography.body,
+    color: '#22c55e',
+    fontWeight: '600',
   },
   signInRow: {
     flexDirection: 'row',
