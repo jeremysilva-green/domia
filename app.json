@@ -22,8 +22,8 @@
         "foregroundImage": "./assets/Domia app icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.domia.propertyapp",
-      "versionCode": 87,
+      "package": "com.domiapy.app",
+      "versionCode": 88,
       "permissions": [
         "com.android.vending.BILLING"
       ]
