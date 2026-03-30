@@ -77,7 +77,7 @@ export default function OwnersListScreen() {
 
       let query = supabase
         .from('properties')
-        .select('id, name, address, city, owner_id, logo_url, owner:owners(full_name, profile_image_url)')
+        .select('id, name, address, city, owner_id, logo_url, owner:owners(full_name, profile_image_url, plan_type)')
         .order('name', { ascending: true });
 
       if (searchQuery.trim()) {
@@ -88,7 +88,13 @@ export default function OwnersListScreen() {
 
       const { data, error } = await query;
       if (error) throw error;
-      return (data ?? []) as PropertyItem[];
+      // Exclude properties owned by demo accounts
+      return ((data ?? []) as any[])
+        .filter((p) => p.owner?.plan_type !== 'demo')
+        .map(({ owner, ...rest }) => ({
+          ...rest,
+          owner: owner ? { full_name: owner.full_name, profile_image_url: owner.profile_image_url } : null,
+        })) as PropertyItem[];
     },
   });
 
