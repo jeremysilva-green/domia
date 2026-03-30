@@ -27,6 +27,7 @@ export interface Database {
           subscription_status: string;
           trial_started_at: string | null;
           subscription_product_id: string | null;
+          is_tester: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -47,6 +48,7 @@ export interface Database {
           subscription_status?: string;
           trial_started_at?: string | null;
           subscription_product_id?: string | null;
+          is_tester?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -67,6 +69,7 @@ export interface Database {
           subscription_status?: string;
           trial_started_at?: string | null;
           subscription_product_id?: string | null;
+          is_tester?: boolean;
           created_at?: string;
           updated_at?: string;
         };
