@@ -1,6 +1,6 @@
 // Force rebundle: 2026-02-04T21:30:00
 import { useEffect, useRef, useState } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -34,6 +34,7 @@ function RootLayoutNav() {
   const refreshSession = useAuthStore((state) => state.refreshSession);
   const syncSession = useAuthStore((state) => state.syncSession);
   const setPendingLoginRedirect = useAuthStore((state) => state.setPendingLoginRedirect);
+  const router = useRouter();
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const fallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handlingUrl = useRef(false);
@@ -56,6 +57,7 @@ function RootLayoutNav() {
         clearTimeout(fallbackTimer.current);
         fallbackTimer.current = null;
       }
+      let sessionObtained = false;
       try {
         let session = null;
         // Implicit flow: #access_token=... — check this FIRST.
@@ -74,19 +76,27 @@ function RootLayoutNav() {
             if (!error && data.session) session = data.session;
           }
         }
-        // PKCE flow: ?code=... (only if no access_token in URL)
-        else if (url.split('#')[0].includes('code=')) {
+        // PKCE flow: ?code=... or #code=... (check full URL, Android may put it in hash)
+        else if (url.includes('code=')) {
           const { data, error } = await supabase.auth.exchangeCodeForSession(url);
           if (!error) session = data.session;
         }
-        if (session) await syncSession(session);
-        else await refreshSession();
+        if (session) {
+          await syncSession(session);
+          sessionObtained = true;
+        } else {
+          await refreshSession();
+        }
       } catch (_) {
         // ignore — no session, index.tsx will redirect to login/intro
       } finally {
-        // Always release after processing. By this point syncSession has fully
-        // completed (session + profile in store), so index.tsx routes correctly.
+        // Release the loading lock. If a session was obtained, reset to root so
+        // index.tsx re-evaluates with fresh state and routes to onboarding/tabs —
+        // even if the 600 ms fallback already pushed navigation to login.
         releaseLink();
+        if (sessionObtained) {
+          router.replace('/');
+        }
       }
     };
 
@@ -99,7 +109,7 @@ function RootLayoutNav() {
         // Guard: if the url event already fired and handleAuthUrl is running,
         // don't set the timer — it would release the lock prematurely.
         if (!handlingUrl.current) {
-          fallbackTimer.current = setTimeout(releaseLink, 600);
+          fallbackTimer.current = setTimeout(releaseLink, 1500);
         }
       }
     });
