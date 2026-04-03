@@ -1,6 +1,6 @@
 // Force rebundle: 2026-02-04T21:30:00
 import { useEffect, useRef, useState } from 'react';
-import { Stack, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -34,7 +34,6 @@ function RootLayoutNav() {
   const refreshSession = useAuthStore((state) => state.refreshSession);
   const syncSession = useAuthStore((state) => state.syncSession);
   const setPendingLoginRedirect = useAuthStore((state) => state.setPendingLoginRedirect);
-  const router = useRouter();
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const fallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handlingUrl = useRef(false);
@@ -57,18 +56,20 @@ function RootLayoutNav() {
         clearTimeout(fallbackTimer.current);
         fallbackTimer.current = null;
       }
-      let sessionObtained = false;
       try {
         let session = null;
-        // Implicit flow: #access_token=... — check this FIRST.
-        if (url.includes('access_token=')) {
+        // PKCE flow: ?code=... (Supabase v2 default — code in query string, safe on Android)
+        if (url.includes('code=')) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(url);
+          if (!error) session = data.session;
+        }
+        // Implicit flow fallback: #access_token=... (older Supabase / some email clients)
+        else if (url.includes('access_token=')) {
           const fragment = url.split('#')[1] ?? '';
           const params = new URLSearchParams(fragment);
           const accessToken = params.get('access_token');
           const refreshToken = params.get('refresh_token');
           if (accessToken && refreshToken) {
-            // setSession updates Supabase's in-memory state, AsyncStorage, and fires
-            // onAuthStateChange — the only correct way to hand a session to the client.
             const { data, error } = await supabase.auth.setSession({
               access_token: accessToken,
               refresh_token: refreshToken,
@@ -76,27 +77,14 @@ function RootLayoutNav() {
             if (!error && data.session) session = data.session;
           }
         }
-        // PKCE flow: ?code=... or #code=... (check full URL, Android may put it in hash)
-        else if (url.includes('code=')) {
-          const { data, error } = await supabase.auth.exchangeCodeForSession(url);
-          if (!error) session = data.session;
-        }
-        if (session) {
-          await syncSession(session);
-          sessionObtained = true;
-        } else {
-          await refreshSession();
-        }
+        if (session) await syncSession(session);
+        else await refreshSession();
       } catch (_) {
-        // ignore — no session, index.tsx will redirect to login/intro
+        // ignore — no session, index.tsx will redirect appropriately
       } finally {
-        // Release the loading lock. If a session was obtained, reset to root so
-        // index.tsx re-evaluates with fresh state and routes to onboarding/tabs —
-        // even if the 600 ms fallback already pushed navigation to login.
+        // Releasing the lock mounts the Stack fresh. index.tsx re-evaluates
+        // store state (session + role + profile) and routes to the right screen.
         releaseLink();
-        if (sessionObtained) {
-          router.replace('/');
-        }
       }
     };
 

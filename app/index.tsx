@@ -46,18 +46,11 @@ export default function Index() {
     return <Redirect href="/(app)/(tabs)" />;
   }
 
-  // After registration — owners wait for deep link to auto-sign-in (show intro),
-  // tenants go to login. Both go to login on pendingLoginRedirect.
-  if (pendingLoginRedirect) {
-    setPendingLoginRedirect(false);
+  // After registration: deep link auto-signs the user in (PKCE code in URL).
+  // If the link fails or the user opens the app manually, fall back to login.
+  if (pendingLoginRedirect || pendingEmailConfirmation) {
+    if (pendingLoginRedirect) setPendingLoginRedirect(false);
     return <Redirect href="/(auth)/login" />;
-  }
-  if (pendingEmailConfirmation) {
-    // Tenants: send to login to sign in manually after confirmation
-    if (userRole === 'tenant') return <Redirect href="/(auth)/login" />;
-    // Owners: show intro — the email confirmation deep link will auto-sign them in.
-    // If they open the app manually instead, they can tap Sign In from intro.
-    return <Redirect href="/(onboarding)/intro" />;
   }
 
   // No session — show intro slides
