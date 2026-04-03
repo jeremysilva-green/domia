@@ -175,7 +175,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         .select()
         .single();
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        // Duplicate key = another concurrent call already inserted — just fetch
+        if (insertError.code === '23505') {
+          const { data: existing } = await supabase.from('owners').select('*').eq('id', user.id).single();
+          if (existing) set({ owner: existing });
+        } else {
+          throw insertError;
+        }
+      }
       if (newOwner) set({ owner: newOwner as Owner });
     }
   },
