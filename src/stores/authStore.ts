@@ -149,39 +149,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const user = get().user;
     if (!user) return;
 
-    try {
-      // Try to fetch existing owner profile
-      const { data, error } = await supabase
-        .from('owners')
-        .select('*')
-        .eq('id', user.id)
+    // Try to fetch existing owner profile
+    const { data, error } = await supabase
+      .from('owners')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (data) {
+      set({ owner: data });
+      return;
+    }
+
+    // Row doesn't exist yet — create it from user metadata
+    if (error?.code === 'PGRST116') {
+      const metadata = user.user_metadata;
+      const { data: newOwner, error: insertError } = await (supabase
+        .from('owners') as any)
+        .insert({
+          id: user.id,
+          email: user.email!,
+          full_name: metadata?.full_name || 'Owner',
+          phone: metadata?.phone || null,
+        })
+        .select()
         .single();
 
-      if (data) {
-        set({ owner: data });
-        return;
-      }
-
-      // If no profile exists, create one from user metadata
-      if (error?.code === 'PGRST116') {
-        const metadata = user.user_metadata;
-        const { data: newOwner, error: insertError } = await (supabase
-          .from('owners') as any)
-          .insert({
-            id: user.id,
-            email: user.email!,
-            full_name: metadata?.full_name || 'Owner',
-            phone: metadata?.phone || null,
-          })
-          .select()
-          .single();
-
-        if (!insertError && newOwner) {
-          set({ owner: newOwner as Owner });
-        }
-      }
-    } catch (_) {
-      // Network error — owner stays null, index.tsx will retry
+      if (insertError) throw insertError;
+      if (newOwner) set({ owner: newOwner as Owner });
     }
   },
 
@@ -397,27 +392,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   completeOnboarding: async ({ displayName, planType, productId }) => {
-    const owner = get().owner;
-    if (!owner) throw new Error('Owner profile not loaded. Please restart the app.');
+    const user = get().user;
+    if (!user) throw new Error('Not authenticated. Please restart the app.');
 
-    const { data, error } = await (supabase
+    // Upsert so this works even if the owner row was never created (silent
+    // fetchOwnerProfile failure) — covers the case where the store has a
+    // stale owner but no matching DB row.
+    const { error } = await (supabase
       .from('owners') as any)
-      .update({
+      .upsert({
+        id: user.id,
+        email: user.email ?? `${user.id}@domia.app`,
+        full_name: displayName || get().owner?.full_name || 'Owner',
         onboarding_completed: true,
         display_name: displayName,
         plan_type: planType,
         subscription_status: 'trial',
         trial_started_at: new Date().toISOString(),
         subscription_product_id: productId,
-      })
-      .eq('id', owner.id)
-      .select()
-      .single();
+      });
 
     if (error) throw error;
-    if (!data) throw new Error('Subscription setup failed. Please try again.');
 
-    set({ owner: data });
+    // Re-fetch to get the canonical DB state into the store
+    await get().fetchOwnerProfile();
   },
 
   upgradePlan: async (planType, productId) => {
