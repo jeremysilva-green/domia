@@ -23,7 +23,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.domiapy.app",
-      "versionCode": 92,
+      "versionCode": 93,
       "permissions": [
         "com.android.vending.BILLING"
       ]
