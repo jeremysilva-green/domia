@@ -14,16 +14,17 @@ export default function Index() {
   const setPendingLoginRedirect = useAuthStore((state) => state.setPendingLoginRedirect);
   const pendingEmailConfirmation = useAuthStore((state) => state.pendingEmailConfirmation);
 
-  // If we have a session but owner/role never loaded (e.g. fetchOwnerProfile threw
-  // on first attempt), retry. This covers cases where the initial network call
-  // failed silently and released the loading screen with an incomplete store.
+  // If we have a session but owner/role never loaded, keep retrying every 2 s.
+  // fetchOwnerProfile sets owner in the store; once owner is non-null the
+  // interval callback becomes a no-op and the next render clears it via deps.
   useEffect(() => {
     if (!session) return;
-    if (userRole === 'owner' && !owner) {
-      fetchOwnerProfile();
-    } else if (!userRole) {
-      syncSession(session);
-    }
+    if (!userRole) { syncSession(session); return; }
+    if (userRole !== 'owner' || owner) return;
+
+    fetchOwnerProfile();
+    const interval = setInterval(fetchOwnerProfile, 2000);
+    return () => clearInterval(interval);
   }, [session, userRole, owner]);
 
   if (session) {
