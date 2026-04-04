@@ -1,6 +1,6 @@
-import { Redirect } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { View, ActivityIndicator } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useAuthStore } from '../src/stores/authStore';
 import { colors } from '../src/constants/theme';
 
@@ -13,46 +13,66 @@ export default function Index() {
   const pendingLoginRedirect = useAuthStore((state) => state.pendingLoginRedirect);
   const setPendingLoginRedirect = useAuthStore((state) => state.setPendingLoginRedirect);
   const pendingEmailConfirmation = useAuthStore((state) => state.pendingEmailConfirmation);
+  const router = useRouter();
 
-  // If we have a session but owner/role never loaded, keep retrying every 2 s.
-  // fetchOwnerProfile sets owner in the store; once owner is non-null the
-  // interval callback becomes a no-op and the next render clears it via deps.
+  // Track where we last navigated so we never fire the same replace twice.
+  // This prevents TOKEN_REFRESHED or any other state update from re-triggering
+  // navigation once we're already inside the app.
+  const lastRoute = useRef<string | null>(null);
+
+  const navigate = (route: string) => {
+    if (lastRoute.current === route) return;
+    lastRoute.current = route;
+    router.replace(route as any);
+  };
+
+  // Retry fetching owner profile every 2 s until it loads.
   useEffect(() => {
-    if (!session) return;
-    if (!userRole) { syncSession(session); return; }
-    if (userRole !== 'owner' || owner) return;
-
+    if (!session || userRole !== 'owner' || owner) return;
     fetchOwnerProfile();
     const interval = setInterval(fetchOwnerProfile, 2000);
     return () => clearInterval(interval);
   }, [session, userRole, owner]);
 
-  if (session) {
+  // Sync role/profile if session exists but role is missing.
+  useEffect(() => {
+    if (session && !userRole) syncSession(session);
+  }, [session, userRole]);
+
+  // Single navigation effect — fires when routing-relevant state changes.
+  // Using router.replace in useEffect (not <Redirect> in render) ensures
+  // this only fires intentionally, not on every re-render from token refresh.
+  useEffect(() => {
+    if (!session) {
+      if (pendingLoginRedirect || pendingEmailConfirmation) {
+        if (pendingLoginRedirect) setPendingLoginRedirect(false);
+        navigate('/(auth)/login');
+      } else {
+        navigate('/(onboarding)/intro');
+      }
+      return;
+    }
+
     if (userRole === 'tenant') {
-      return <Redirect href="/(tenant)/(tabs)" />;
+      navigate('/(tenant)/(tabs)');
+      return;
     }
-    // Spin while role or owner profile is still loading
-    if (!userRole || (userRole === 'owner' && !owner)) {
-      return (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
-          <ActivityIndicator color={colors.yellow} />
-        </View>
-      );
-    }
-    // Owner: redirect to onboarding if not yet completed, otherwise go to app
+
+    // Still loading role or owner profile — wait
+    if (!userRole || (userRole === 'owner' && !owner)) return;
+
     if (userRole === 'owner' && !(owner as any).onboarding_completed) {
-      return <Redirect href="/(onboarding)" />;
+      navigate('/(onboarding)');
+      return;
     }
-    return <Redirect href="/(app)/(tabs)" />;
-  }
 
-  // After registration: deep link auto-signs the user in (PKCE code in URL).
-  // If the link fails or the user opens the app manually, fall back to login.
-  if (pendingLoginRedirect || pendingEmailConfirmation) {
-    if (pendingLoginRedirect) setPendingLoginRedirect(false);
-    return <Redirect href="/(auth)/login" />;
-  }
+    navigate('/(app)/(tabs)');
+  }, [session, userRole, owner, pendingLoginRedirect, pendingEmailConfirmation]);
 
-  // No session — show intro slides
-  return <Redirect href="/(onboarding)/intro" />;
+  // Always render a spinner — all navigation happens in useEffect above
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+      <ActivityIndicator color={colors.yellow} />
+    </View>
+  );
 }

@@ -102,12 +102,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       supabase.auth.onAuthStateChange((event, session) => {
-        // TOKEN_REFRESHED: only update the session token — do NOT touch role/owner/tenant
-        // state. Updating those causes index.tsx to re-render and flash the spinner.
-        if (event === 'TOKEN_REFRESHED') {
-          set({ session, user: session?.user ?? null });
-          return;
-        }
+        // TOKEN_REFRESHED: the Supabase client already updated its internal token
+        // and AsyncStorage. Do NOT update Zustand — changing session reference
+        // causes index.tsx to re-render and re-fire navigation, flickering the app.
+        if (event === 'TOKEN_REFRESHED') return;
 
         set({ session, user: session?.user ?? null });
 
@@ -119,7 +117,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           set({ userRole: role || null });
           AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
           set({ pendingEmailConfirmation: false });
-          // Only fetch profile on sign-in or when missing — not on every event
+          // Only fetch profile when missing — not on every event
           const { owner: currentOwner, tenantProfile: currentTenant } = get();
           if (role === 'owner' && !currentOwner) get().fetchOwnerProfile();
           else if (role === 'tenant' && !currentTenant) get().fetchTenantProfile();
