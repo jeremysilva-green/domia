@@ -101,7 +101,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         if (pending) set({ pendingEmailConfirmation: true });
       }
 
-      supabase.auth.onAuthStateChange((_event, session) => {
+      supabase.auth.onAuthStateChange((event, session) => {
         set({ session, user: session?.user ?? null });
         // Skip role/profile updates in demo mode — signInAsDemo manages state directly
         if (get().isDemoMode) return;
@@ -111,11 +111,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           // Clear pending confirmation flag — a valid session means the user confirmed their email
           AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
           set({ pendingEmailConfirmation: false });
-          // Fire-and-forget — do NOT await here. Supabase awaits all subscribers
-          // inside _notifyAllSubscribers, so awaiting fetchOwnerProfile would block
-          // _callRefreshToken and cause the entire auth flow to hang indefinitely.
-          if (role === 'owner') get().fetchOwnerProfile();
-          else if (role === 'tenant') get().fetchTenantProfile();
+          // Only fetch profile on actual sign-in events or when profile is missing.
+          // TOKEN_REFRESHED fires every hour and must NOT re-fetch — it causes rapid
+          // state updates that make the onboarding screens flash/strobe.
+          const { owner: currentOwner, tenantProfile: currentTenant } = get();
+          const needsFetch = event === 'SIGNED_IN' || event === 'USER_UPDATED';
+          if (role === 'owner' && (!currentOwner || needsFetch)) get().fetchOwnerProfile();
+          else if (role === 'tenant' && (!currentTenant || needsFetch)) get().fetchTenantProfile();
         } else {
           set({ owner: null, tenantProfile: null, userRole: null });
         }
