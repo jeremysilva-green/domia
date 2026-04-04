@@ -102,22 +102,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       supabase.auth.onAuthStateChange((event, session) => {
+        // TOKEN_REFRESHED: only update the session token — do NOT touch role/owner/tenant
+        // state. Updating those causes index.tsx to re-render and flash the spinner.
+        if (event === 'TOKEN_REFRESHED') {
+          set({ session, user: session?.user ?? null });
+          return;
+        }
+
         set({ session, user: session?.user ?? null });
+
         // Skip role/profile updates in demo mode — signInAsDemo manages state directly
         if (get().isDemoMode) return;
+
         if (session?.user) {
           const role = session.user.user_metadata?.role as UserRole | undefined;
           set({ userRole: role || null });
-          // Clear pending confirmation flag — a valid session means the user confirmed their email
           AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
           set({ pendingEmailConfirmation: false });
-          // Only fetch profile on actual sign-in events or when profile is missing.
-          // TOKEN_REFRESHED fires every hour and must NOT re-fetch — it causes rapid
-          // state updates that make the onboarding screens flash/strobe.
+          // Only fetch profile on sign-in or when missing — not on every event
           const { owner: currentOwner, tenantProfile: currentTenant } = get();
-          const needsFetch = event === 'SIGNED_IN' || event === 'USER_UPDATED';
-          if (role === 'owner' && (!currentOwner || needsFetch)) get().fetchOwnerProfile();
-          else if (role === 'tenant' && (!currentTenant || needsFetch)) get().fetchTenantProfile();
+          if (role === 'owner' && !currentOwner) get().fetchOwnerProfile();
+          else if (role === 'tenant' && !currentTenant) get().fetchTenantProfile();
         } else {
           set({ owner: null, tenantProfile: null, userRole: null });
         }
@@ -178,10 +183,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         .single();
 
       if (insertError) {
-        // Duplicate key = another concurrent call already inserted — just fetch
+        // Duplicate key = concurrent call already inserted — just fetch
         if (insertError.code === '23505') {
           const { data: existing } = await supabase.from('owners').select('*').eq('id', user.id).single();
           if (existing) set({ owner: existing });
+        } else if (insertError.code === '42501') {
+          // RLS blocked the insert — session JWT may not be fully propagated yet.
+          // Don't throw; the retry interval in index.tsx will try again shortly.
         } else {
           throw insertError;
         }
