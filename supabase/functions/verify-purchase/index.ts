@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
       // No Google credentials set — accept purchase unverified (dev/staging fallback)
       console.warn('GOOGLE_SERVICE_ACCOUNT_KEY not set — skipping verification');
     } else {
-      const packageName = 'com.domia.propertyapp';
+      const packageName = 'com.domiapy.app';
       const result = await verifyGooglePlayPurchase(
         packageName,
         productId,
