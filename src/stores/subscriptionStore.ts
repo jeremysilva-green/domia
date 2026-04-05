@@ -90,6 +90,13 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
     }
 
     set({ isPurchasing: true });
+
+    // Safety timeout — if IAP hangs for 20 s, reset and surface the error
+    const timeout = setTimeout(() => {
+      set({ isPurchasing: false });
+      onError('Purchase timed out. Please check your Google Play account and try again.');
+    }, 20000);
+
     try {
       const sku = PLAN_PRODUCT_IDS[planType];
 
@@ -104,6 +111,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
       // Set up listeners before triggering the purchase dialog
       const purchaseListener = RNIap.purchaseUpdatedListener(async (purchase: any) => {
         if (purchase.productId === sku) {
+          clearTimeout(timeout);
           try {
             await RNIap.finishTransaction({ purchase, isConsumable: false });
           } catch {}
@@ -137,6 +145,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
 
       const errorListener = RNIap.purchaseErrorListener((error: any) => {
         if (error.productId === sku) {
+          clearTimeout(timeout);
           purchaseListener.remove();
           errorListener.remove();
           set({ isPurchasing: false });
@@ -156,6 +165,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
       } as any);
 
     } catch (e: any) {
+      clearTimeout(timeout);
       set({ isPurchasing: false });
       onError(e?.message || 'Purchase failed');
     }
