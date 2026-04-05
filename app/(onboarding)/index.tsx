@@ -156,8 +156,8 @@ export default function OnboardingScreen() {
   const handlePurchase = async () => {
     if (!selectedPlan) return;
 
-    // DEV bypass or tester bypass: skip IAP and complete onboarding directly
-    if (__DEV__ || (owner as any)?.is_tester) {
+    // DEV bypass: skip IAP and complete onboarding directly
+    if (__DEV__) {
       try {
         await completeOnboarding({
           displayName: owner?.full_name || '',
@@ -207,9 +207,9 @@ export default function OnboardingScreen() {
         // If the user already owns this subscription, complete onboarding and navigate
         if (msg.includes('already') || msg.includes('E_ALREADY_OWNED') || msg.includes('ItemAlreadyOwned')) {
           await doCompleteAndNavigate();
-        } else {
-          AppAlert.alert(t.onboarding.purchaseError, msg);
+          return;
         }
+        AppAlert.alert(t.onboarding.purchaseError, msg);
       }
     );
   };
