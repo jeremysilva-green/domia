@@ -11,7 +11,7 @@ async function verifyGooglePlayPurchase(
   productId: string,
   purchaseToken: string,
   serviceAccountKeyJson: string
-): Promise<{ valid: boolean; expiryTimeMs?: string; cancelReason?: number }> {
+): Promise<{ valid: boolean; expiryTimeMs?: string; cancelReason?: number; errorDetail?: string }> {
   const serviceAccount = JSON.parse(serviceAccountKeyJson);
 
   // Build a JWT to exchange for an access token (Google OAuth2)
@@ -63,7 +63,14 @@ async function verifyGooglePlayPurchase(
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
   });
-  const { access_token } = await tokenRes.json();
+  const tokenData = await tokenRes.json();
+  const { access_token } = tokenData;
+
+  if (!access_token) {
+    const detail = `OAuth token exchange failed: ${JSON.stringify(tokenData)}`;
+    console.error(detail);
+    return { valid: false, errorDetail: detail };
+  }
 
   // Call Google Play Developer API to verify the subscription
   const verifyRes = await fetch(
@@ -72,10 +79,14 @@ async function verifyGooglePlayPurchase(
   );
 
   if (!verifyRes.ok) {
-    return { valid: false };
+    const errorBody = await verifyRes.text();
+    const detail = `Google Play API error ${verifyRes.status}: ${errorBody} | packageName=${packageName} productId=${productId} tokenPrefix=${purchaseToken.substring(0, 20)}`;
+    console.error(detail);
+    return { valid: false, errorDetail: detail };
   }
 
   const data = await verifyRes.json();
+  console.log('Google Play verification success:', JSON.stringify({ expiryTimeMillis: data.expiryTimeMillis, cancelReason: data.cancelReason, paymentState: data.paymentState }));
   return {
     valid: true,
     expiryTimeMs: data.expiryTimeMillis,
@@ -133,7 +144,8 @@ Deno.serve(async (req) => {
         serviceAccountKeyJson
       );
       if (!result.valid) {
-        return new Response(JSON.stringify({ error: 'Purchase could not be verified with Google Play' }), {
+        console.error('verify-purchase: invalid result:', result.errorDetail);
+        return new Response(JSON.stringify({ error: 'Purchase could not be verified with Google Play', detail: result.errorDetail }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

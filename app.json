@@ -3,7 +3,7 @@
     "name": "Domia",
     "slug": "domus",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/Domia app icon.png",
     "scheme": "domus",
     "userInterfaceStyle": "automatic",
@@ -23,10 +23,12 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.domiapy.app",
-      "versionCode": 102,
+      "versionCode": 106,
       "permissions": [
         "com.android.vending.BILLING"
-      ]
+      ],
+      "allowBackup": false,
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
       "bundler": "metro",

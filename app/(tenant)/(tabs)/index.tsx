@@ -62,20 +62,25 @@ export default function TenantHomeScreen() {
     refetchInterval: 5000,
   });
 
-  // Get lease image URL from tenant record
-  const { data: leaseImageUrl, refetch: refetchLease } = useQuery<string | null>({
+  // Get lease image URL and start date from tenant record
+  const { data: leaseData, refetch: refetchLease } = useQuery<{ leaseImageUrl: string | null; leaseStart: string | null }>({
     queryKey: ['tenant-lease', user?.id],
     queryFn: async () => {
-      if (!user?.id) return null;
+      if (!user?.id) return { leaseImageUrl: null, leaseStart: null };
       const { data } = await supabase
         .from('tenants')
-        .select('lease_image_url')
+        .select('lease_image_url, lease_start')
         .eq('id', user.id)
         .single();
-      return (data as any)?.lease_image_url ?? null;
+      return {
+        leaseImageUrl: (data as any)?.lease_image_url ?? null,
+        leaseStart: (data as any)?.lease_start ?? null,
+      };
     },
     enabled: !!user?.id && connectionRequest?.status === 'approved',
   });
+  const leaseImageUrl = leaseData?.leaseImageUrl ?? null;
+  const leaseStart = leaseData?.leaseStart ?? null;
 
   // Get rent payments for rating calculation
   const { data: rentPayments, refetch: refetchPayments } = useQuery({
@@ -139,7 +144,7 @@ export default function TenantHomeScreen() {
     return new Date() >= resetDate;
   }, [currentPayment]);
 
-  // Mora = days past (due_date + 3-day grace) with accumulated fine
+  // Mora = days past (due_date + 3-day grace) with accumulated fine (used in pagos card badges)
   const moraData = useMemo(() => {
     if (!currentPayment) return null;
     if (currentPayment.status === 'paid' || currentPayment.proof_image_url) return null;
@@ -151,6 +156,43 @@ export default function TenantHomeScreen() {
     const finePerDay = connectionRequest?.unit?.fine_amount ?? 0;
     return { daysInMora, accumulatedFine: daysInMora * finePerDay, finePerDay };
   }, [currentPayment, connectionRequest]);
+
+  // Rent reminder: show banner 5 days before due date through mora period
+  const reminderData = useMemo(() => {
+    // If proof uploaded or paid, never show
+    if (currentPayment?.status === 'paid' || currentPayment?.proof_image_url) return null;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const msPerDay = 1000 * 60 * 60 * 24;
+
+    let dueDate: Date | null = null;
+
+    if (currentPayment?.due_date) {
+      // Use actual payment record due date
+      dueDate = new Date(currentPayment.due_date);
+      dueDate.setHours(0, 0, 0, 0);
+    } else if (leaseStart) {
+      // No payment record yet — derive next due date from lease_start day-of-month
+      const leaseStartDate = new Date(leaseStart);
+      const dueDay = leaseStartDate.getDate(); // e.g. 15
+      // Try this month first, then next month
+      const thisMonth = new Date(today.getFullYear(), today.getMonth(), dueDay);
+      const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, dueDay);
+      dueDate = today <= thisMonth ? thisMonth : nextMonth;
+    }
+
+    if (!dueDate) return null;
+
+    const daysUntilDue = Math.round((dueDate.getTime() - today.getTime()) / msPerDay);
+    if (daysUntilDue > 5) return null;
+
+    const daysSinceDue = -daysUntilDue;
+    const daysInMora = Math.max(0, daysSinceDue - 3);
+    const finePerDay = connectionRequest?.unit?.fine_amount ?? 0;
+    const accumulatedFine = daysInMora * finePerDay;
+    return { daysUntilDue, daysSinceDue, daysInMora, accumulatedFine, finePerDay };
+  }, [currentPayment, connectionRequest, leaseStart]);
 
   // Pick image from library and upload to Supabase storage, return public URL
   const pickAndUploadImage = async (storagePath: string): Promise<string> => {
@@ -228,15 +270,24 @@ export default function TenantHomeScreen() {
     if (soundPlayedForPayment.current === currentPayment.id) return;
 
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const dueDate = new Date(currentPayment.due_date);
-    const daysSinceDue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+    dueDate.setHours(0, 0, 0, 0);
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const daysUntilDue = Math.round((dueDate.getTime() - today.getTime()) / msPerDay);
+    const daysSinceDue = -daysUntilDue;
     const daysInMora = Math.max(0, daysSinceDue - 3);
 
     if (daysInMora > 0) {
       playSound('passedDueDate');
       soundPlayedForPayment.current = currentPayment.id;
-    } else if (daysSinceDue === 0) {
+    } else if (daysUntilDue <= 0) {
+      // Due today or within grace period
       playSound('dueDate');
+      soundPlayedForPayment.current = currentPayment.id;
+    } else if (daysUntilDue <= 5) {
+      // Approaching due date — gentle reminder sound
+      playSound('notification');
       soundPlayedForPayment.current = currentPayment.id;
     }
 
@@ -254,6 +305,7 @@ export default function TenantHomeScreen() {
     setRefreshing(true);
     try {
       await Promise.all([refetch(), refetchPayments(), refetchLease(), refetchCurrentPayment()]);
+    } catch (_) {
     } finally {
       setRefreshing(false);
     }
@@ -488,6 +540,54 @@ export default function TenantHomeScreen() {
                 </View>
               </View>
             </Card>
+
+            {isConnected && reminderData && (
+              <View style={[
+                styles.reminderBanner,
+                reminderData.daysInMora > 0 ? styles.reminderBannerMora : reminderData.daysSinceDue > 0 ? styles.reminderBannerOverdue : styles.reminderBannerWarning,
+              ]}>
+                <View style={styles.reminderIconRow}>
+                  <Feather
+                    name={reminderData.daysInMora > 0 ? 'alert-octagon' : reminderData.daysSinceDue > 0 ? 'alert-triangle' : 'bell'}
+                    size={20}
+                    color={reminderData.daysInMora > 0 ? '#ef4444' : reminderData.daysSinceDue > 0 ? '#f97316' : '#facc15'}
+                  />
+                  <Text style={[
+                    styles.reminderTitle,
+                    reminderData.daysInMora > 0 ? styles.reminderTitleMora : reminderData.daysSinceDue > 0 ? styles.reminderTitleOverdue : styles.reminderTitleWarning,
+                  ]}>
+                    {reminderData.daysUntilDue === 0
+                      ? t.payments.reminderDueToday
+                      : reminderData.daysUntilDue > 0
+                        ? t.payments.reminderDueSoon(reminderData.daysUntilDue)
+                        : t.payments.reminderOverdue(reminderData.daysSinceDue)}
+                  </Text>
+                </View>
+                {reminderData.daysInMora > 0 && reminderData.finePerDay > 0 && (
+                  <>
+                    <Text style={styles.reminderFine}>
+                      {t.payments.reminderMora(reminderData.accumulatedFine)}
+                    </Text>
+                    <Text style={styles.reminderFineSubtitle}>
+                      {t.payments.reminderMoraSubtitle(reminderData.finePerDay)}
+                    </Text>
+                  </>
+                )}
+                <TouchableOpacity
+                  style={[
+                    styles.reminderButton,
+                    reminderData.daysInMora > 0 ? styles.reminderButtonMora : styles.reminderButtonWarning,
+                  ]}
+                  onPress={() => uploadProofMutation.mutate()}
+                  disabled={uploadProofMutation.isPending}
+                >
+                  <Feather name="upload" size={14} color={reminderData.daysInMora > 0 ? '#fff' : '#0f0f14'} />
+                  <Text style={[styles.reminderButtonText, reminderData.daysInMora > 0 && { color: '#fff' }]}>
+                    {t.payments.reminderAction}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {isConnected && (
               <Card style={styles.pagosCard}>
@@ -1196,6 +1296,74 @@ const styles = StyleSheet.create({
   modalImage: {
     width: '100%',
     height: '80%',
+  },
+  reminderBanner: {
+    borderRadius: 14,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1.5,
+    gap: spacing.xs,
+  },
+  reminderBannerWarning: {
+    backgroundColor: 'rgba(250, 204, 21, 0.08)',
+    borderColor: 'rgba(250, 204, 21, 0.4)',
+  },
+  reminderBannerOverdue: {
+    backgroundColor: 'rgba(249, 115, 22, 0.1)',
+    borderColor: 'rgba(249, 115, 22, 0.5)',
+  },
+  reminderBannerMora: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: 'rgba(239, 68, 68, 0.5)',
+  },
+  reminderIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  reminderTitle: {
+    ...typography.body,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  reminderTitleWarning: {
+    color: '#facc15',
+  },
+  reminderTitleOverdue: {
+    color: '#f97316',
+  },
+  reminderTitleMora: {
+    color: '#ef4444',
+  },
+  reminderFine: {
+    ...typography.h3,
+    fontWeight: '800',
+    color: '#ef4444',
+    marginTop: spacing.xs,
+  },
+  reminderFineSubtitle: {
+    ...typography.bodySmall,
+    color: colors.text.secondary,
+  },
+  reminderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+  },
+  reminderButtonWarning: {
+    backgroundColor: '#facc15',
+  },
+  reminderButtonMora: {
+    backgroundColor: '#ef4444',
+  },
+  reminderButtonText: {
+    ...typography.body,
+    fontWeight: '700',
+    color: '#0f0f14',
   },
   pagosCard: {
     marginBottom: spacing.lg,

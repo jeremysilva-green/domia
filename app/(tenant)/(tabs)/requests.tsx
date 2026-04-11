@@ -102,8 +102,12 @@ export default function TenantRequestsScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
+    try {
+      await refetch();
+    } catch (_) {
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleClearAll = useCallback(async () => {

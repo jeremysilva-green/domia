@@ -12,6 +12,7 @@ export const es: Translations = {
     loading: 'Cargando...',
     error: 'Error',
     success: 'Exitoso',
+    networkError: 'Sin conexión a internet.',
     confirm: 'Confirmar',
     back: 'Atrás',
     next: 'Siguiente',
@@ -301,10 +302,7 @@ export const es: Translations = {
     noVacantUnitsSubtitle: 'Todas tus unidades están ocupadas. Agrega más unidades o espera a que haya una vacante.',
     approvalSuccess: 'Solicitud de conexión aprobada. El inquilino ha sido asignado a la unidad.',
     declineSuccess: 'Solicitud de conexión rechazada.',
-    clearAll: 'Limpiar Todo',
-    clearAllConfirm: 'Limpiar Notificaciones',
-    clearAllConfirmMsg: 'Esto eliminará todas las notificaciones de tu bandeja. Esta acción no se puede deshacer.',
-    clearAllSuccess: 'Todas las notificaciones fueron eliminadas.',
+    seen: 'Visto',
   },
 
   // Tenant - Property Search
@@ -544,6 +542,12 @@ export const es: Translations = {
     proofUploaded: 'Comprobante enviado · pendiente de confirmación',
     markPaid: 'Pagó',
     dueOn: 'Vence',
+    reminderDueSoon: (days: number) => days === 1 ? '¡Tu alquiler vence mañana!' : `Tu alquiler vence en ${days} días.`,
+    reminderDueToday: '¡Tu alquiler vence hoy!',
+    reminderOverdue: (days: number) => `Tu alquiler lleva ${days} día${days === 1 ? '' : 's'} de atraso.`,
+    reminderMora: (fine: number) => `Multa acumulada: $${fine.toFixed(2)}`,
+    reminderMoraSubtitle: (finePerDay: number) => `Se agregan $${finePerDay.toFixed(2)} por día hasta que se confirme el pago.`,
+    reminderAction: 'Subir comprobante ahora',
   },
 
   // Puntuación de inquilino

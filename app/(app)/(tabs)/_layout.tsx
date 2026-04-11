@@ -131,6 +131,12 @@ function formatDisplayCurrency(amount: number, displayCurrency: Currency): strin
   }).format(amount);
 }
 
+function errorMessage(error: any, t: any): string {
+  const msg: string = error?.message || '';
+  if (msg.includes('Network request failed')) return t.common.networkError;
+  return msg || t.common.networkError;
+}
+
 function DashboardContent({ displayCurrency }: { displayCurrency: Currency }) {
   const router = useRouter();
   const { owner, isDemoMode } = useAuthStore();
@@ -139,6 +145,7 @@ function DashboardContent({ displayCurrency }: { displayCurrency: Currency }) {
 
   const { data: stats, refetch: refetchStats } = useQuery<DashboardStats>({
     queryKey: ['dashboard-stats', owner?.id, displayCurrency],
+    staleTime: 0,
     queryFn: async () => {
       if (!owner?.id) throw new Error('No owner');
       const now = new Date();
@@ -256,6 +263,8 @@ function DashboardContent({ displayCurrency }: { displayCurrency: Currency }) {
     setRefreshing(true);
     try {
       await Promise.all([refetchStats(), refetchLeases()]);
+    } catch (_) {
+      // Silently swallow — each query manages its own error state
     } finally {
       setRefreshing(false);
     }
@@ -500,6 +509,8 @@ function PropertiesContent() {
     setRefreshing(true);
     try {
       await refetch();
+    } catch (_) {
+      // Silently swallow — query manages its own error state
     } finally {
       setRefreshing(false);
     }
@@ -662,6 +673,8 @@ function MaintenanceContent() {
     setRefreshing(true);
     try {
       await refetch();
+    } catch (_) {
+      // Silently swallow — query manages its own error state
     } finally {
       setRefreshing(false);
     }
@@ -729,7 +742,7 @@ function NotificationsContent() {
   const [showUnitModal, setShowUnitModal] = useState(false);
   const [rejectDialog, setRejectDialog] = useState<{ request: ConnectionRequestWithDetails } | null>(null);
   const [infoDialog, setInfoDialog] = useState<{ title: string; message: string } | null>(null);
-  const [showClearAllDialog, setShowClearAllDialog] = useState(false);
+  const [inboxTab, setInboxTab] = useState<'inbox' | 'seen'>('inbox');
   const [proofPreviewUrl, setProofPreviewUrl] = useState<string | null>(null);
   const [expandedDisconnectId, setExpandedDisconnectId] = useState<string | null>(null);
 
@@ -825,14 +838,9 @@ function NotificationsContent() {
       setShowUnitModal(false);
       setSelectedRequest(null);
 
-      // Navigate to tenant detail page using tenantId from mutation variables (not stale closure)
-      if (variables.tenantId) {
-        router.push(`/(app)/tenant/${variables.tenantId}` as any);
-      } else {
-        AppAlert.alert(t.common.success, t.notifications.approvalSuccess);
-      }
+      AppAlert.alert(t.common.success, t.notifications.approvalSuccess);
     },
-    onError: (error: any) => AppAlert.alert(t.common.error, error.message || 'Failed to approve request'),
+    onError: (error: any) => AppAlert.alert(t.common.error, errorMessage(error, t)),
   });
 
   const rejectRequest = useMutation({
@@ -848,25 +856,7 @@ function NotificationsContent() {
       queryClient.invalidateQueries({ queryKey: ['pending-connections-count'] });
       setInfoDialog({ title: t.common.done, message: t.notifications.declineSuccess });
     },
-    onError: (error: any) => AppAlert.alert(t.common.error, error.message || 'Failed to decline request'),
-  });
-
-  const clearAll = useMutation({
-    mutationFn: async () => {
-      if (!owner?.id) return;
-      const { error } = await supabase
-        .from('connection_requests')
-        .delete()
-        .eq('owner_id', owner.id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['connection-requests'] });
-      queryClient.invalidateQueries({ queryKey: ['pending-connections-count'] });
-      setShowClearAllDialog(false);
-      setInfoDialog({ title: t.common.done, message: t.notifications.clearAllSuccess });
-    },
-    onError: (error: any) => AppAlert.alert(t.common.error, error.message || 'Failed to clear notifications'),
+    onError: (error: any) => AppAlert.alert(t.common.error, errorMessage(error, t)),
   });
 
   const { data: paymentProofs } = useQuery({
@@ -986,7 +976,7 @@ function NotificationsContent() {
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['tenants'] });
     },
-    onError: (error: any) => AppAlert.alert(t.common.error, error.message),
+    onError: (error: any) => AppAlert.alert(t.common.error, errorMessage(error, t)),
   });
 
   const handleApprove = (request: ConnectionRequestWithDetails) => {
@@ -1011,13 +1001,15 @@ function NotificationsContent() {
     setRefreshing(true);
     try {
       await refetch();
+    } catch (_) {
+      // Silently swallow — query manages its own error state
     } finally {
       setRefreshing(false);
     }
   };
 
   const pendingRequests = requests?.filter((r) => r.status === 'pending') || [];
-  const processedRequests = requests?.filter((r) => r.status !== 'pending') || [];
+  const seenRequests = requests?.filter((r) => r.status !== 'pending') || [];
   const isUnitVacant = (u: any) =>
     Array.isArray(u.tenants) ? !u.tenants.some((t: any) => t.status === 'active') : u.status === 'vacant';
   const vacantUnits = properties?.flatMap((p): any[] => {
@@ -1083,14 +1075,32 @@ function NotificationsContent() {
             </View>
           )}
         </View>
-        {((requests as ConnectionRequestWithDetails[] | undefined)?.length ?? 0) > 0 && (
-          <TouchableOpacity onPress={() => setShowClearAllDialog(true)}>
-            <Text style={{ ...typography.bodySmall, color: colors.yellow, fontWeight: '600' }}>{t.notifications.clearAll}</Text>
-          </TouchableOpacity>
-        )}
+      </View>
+      <View style={contentStyles.inboxTabRow}>
+        <TouchableOpacity
+          style={[contentStyles.inboxTabBtn, inboxTab === 'inbox' && contentStyles.inboxTabBtnActive]}
+          onPress={() => setInboxTab('inbox')}
+        >
+          <Text style={[contentStyles.inboxTabText, inboxTab === 'inbox' && contentStyles.inboxTabTextActive]}>
+            {t.notifications.title}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[contentStyles.inboxTabBtn, inboxTab === 'seen' && contentStyles.inboxTabBtnActive]}
+          onPress={() => setInboxTab('seen')}
+        >
+          <Text style={[contentStyles.inboxTabText, inboxTab === 'seen' && contentStyles.inboxTabTextActive]}>
+            {t.notifications.seen}
+          </Text>
+          {seenRequests.length > 0 && (
+            <View style={contentStyles.seenCount}>
+              <Text style={contentStyles.seenCountText}>{seenRequests.length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
       <FlatList
-        data={[...pendingRequests, ...processedRequests]}
+        data={inboxTab === 'inbox' ? pendingRequests : seenRequests}
         keyExtractor={(item) => item.id}
         renderItem={renderRequest}
         contentContainerStyle={contentStyles.list}
@@ -1099,7 +1109,7 @@ function NotificationsContent() {
         ListEmptyComponent={!isLoading ? renderEmpty : null}
         ListHeaderComponent={
           <>
-            {disconnectionRequests && disconnectionRequests.length > 0 && (
+            {inboxTab === 'inbox' && disconnectionRequests && disconnectionRequests.length > 0 && (
               <View>
                 <Text style={contentStyles.listSectionTitle}>{t.disconnectionRequests.sectionTitle}</Text>
                 {disconnectionRequests.map((req: any) => (
@@ -1151,7 +1161,7 @@ function NotificationsContent() {
                 ))}
               </View>
             )}
-            {paymentProofs && paymentProofs.length > 0 && (
+            {inboxTab === 'inbox' && paymentProofs && paymentProofs.length > 0 && (
               <View>
                 <Text style={contentStyles.listSectionTitle}>{t.payments.title}</Text>
                 {paymentProofs.map((payment: any) => (
@@ -1207,7 +1217,7 @@ function NotificationsContent() {
                 ))}
               </View>
             )}
-            {pendingRequests.length > 0 && <Text style={contentStyles.listSectionTitle}>{t.notifications.pendingRequests}</Text>}
+            {inboxTab === 'inbox' && pendingRequests.length > 0 && <Text style={contentStyles.listSectionTitle}>{t.notifications.pendingRequests}</Text>}
           </>
         }
       />
@@ -1265,16 +1275,6 @@ function NotificationsContent() {
           })()}
         </SafeAreaView>
       </Modal>
-      <ConfirmDialog
-        visible={showClearAllDialog}
-        title={t.notifications.clearAllConfirm}
-        message={t.notifications.clearAllConfirmMsg}
-        confirmText={t.notifications.clearAll}
-        cancelText={t.common.cancel}
-        destructive
-        onConfirm={() => clearAll.mutate()}
-        onCancel={() => setShowClearAllDialog(false)}
-      />
       <ConfirmDialog
         visible={!!rejectDialog}
         title={t.notifications.declineConfirm}
@@ -2242,6 +2242,13 @@ const contentStyles = StyleSheet.create({
   actionButton: { flex: 1 },
   countBadge: { backgroundColor: colors.error.main, borderRadius: 12, minWidth: 24, height: 24, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xs },
   countText: { ...typography.caption, fontWeight: '600', color: colors.white },
+  inboxTabRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, gap: spacing.sm },
+  inboxTabBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: spacing.xs, paddingHorizontal: spacing.md, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  inboxTabBtnActive: { borderColor: colors.yellow, backgroundColor: 'rgba(250,204,21,0.1)' },
+  inboxTabText: { ...typography.bodySmall, fontWeight: '600', color: colors.text.secondary },
+  inboxTabTextActive: { color: colors.yellow },
+  seenCount: { backgroundColor: colors.yellow, borderRadius: 10, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  seenCountText: { fontSize: 10, fontWeight: '700', color: colors.background },
   listSectionTitle: { ...typography.bodySmall, fontWeight: '600', color: colors.text.secondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: spacing.md },
   modalContainer: { flex: 1, backgroundColor: colors.background },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },

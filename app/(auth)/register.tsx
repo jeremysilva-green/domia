@@ -82,7 +82,7 @@ export default function RegisterScreen() {
     } catch (error: any) {
       setDialog({
         title: t.auth.registerFailed,
-        message: error.message || t.common.error,
+        message: error.message?.includes('Network request failed') ? t.common.networkError : (error.message || t.common.error),
         onConfirm: () => setDialog(null),
       });
     }

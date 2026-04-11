@@ -54,7 +54,7 @@ export default function LoginScreen() {
       await signIn(email.trim(), password);
       router.replace('/');
     } catch (error: any) {
-      AppAlert.alert(t.auth.loginFailed, error.message || 'An error occurred');
+      AppAlert.alert(t.auth.loginFailed, error.message?.includes('Network request failed') ? t.common.networkError : (error.message || t.common.error));
     }
   };
 

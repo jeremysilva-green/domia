@@ -231,8 +231,12 @@ export default function OwnersListScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
+    try {
+      await refetch();
+    } catch (_) {
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   // Subscribe to real-time connection_requests changes

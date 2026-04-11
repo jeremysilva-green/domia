@@ -46,7 +46,7 @@ export default function ForgotPasswordScreen() {
       await resetPassword(email.trim());
       setSent(true);
     } catch (error: any) {
-      AppAlert.alert(t.common.error, error.message || t.common.error);
+      AppAlert.alert(t.common.error, error.message?.includes('Network request failed') ? t.common.networkError : (error.message || t.common.error));
     }
   };
 

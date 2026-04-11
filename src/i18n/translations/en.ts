@@ -10,6 +10,7 @@ export const en = {
     loading: 'Loading...',
     error: 'Error',
     success: 'Success',
+    networkError: 'No internet connection.',
     confirm: 'Confirm',
     back: 'Back',
     next: 'Next',
@@ -299,10 +300,7 @@ export const en = {
     noVacantUnitsSubtitle: 'All your units are currently occupied. Add more units or wait for a vacancy.',
     approvalSuccess: 'Connection request approved. Tenant has been assigned to the unit.',
     declineSuccess: 'Connection request declined.',
-    clearAll: 'Clear All',
-    clearAllConfirm: 'Clear All Notifications',
-    clearAllConfirmMsg: 'This will remove all notifications from your inbox. This action cannot be undone.',
-    clearAllSuccess: 'All notifications cleared.',
+    seen: 'Seen',
   },
 
   // Tenant - Property Search
@@ -542,6 +540,12 @@ export const en = {
     proofUploaded: 'Proof sent · awaiting confirmation',
     markPaid: 'Mark Paid',
     dueOn: 'Due',
+    reminderDueSoon: (days: number) => days === 1 ? 'Your rent is due tomorrow!' : `Your rent is due in ${days} days.`,
+    reminderDueToday: 'Your rent is due today!',
+    reminderOverdue: (days: number) => `Your rent is ${days} day${days === 1 ? '' : 's'} overdue.`,
+    reminderMora: (fine: number) => `Accumulated fine: $${fine.toFixed(2)}`,
+    reminderMoraSubtitle: (finePerDay: number) => `$${finePerDay.toFixed(2)} added per day until payment is confirmed.`,
+    reminderAction: 'Upload Proof Now',
   },
 
   // Tenant Score
