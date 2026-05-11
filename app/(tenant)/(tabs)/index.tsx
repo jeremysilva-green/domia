@@ -13,6 +13,7 @@ import { decode } from 'base64-arraybuffer';
 import { colors, spacing, typography } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
 import { playSound } from '../../../src/utils/sounds';
+import { registerPushToken, sendPush, configureForegroundNotifications } from '../../../src/utils/pushNotifications';
 import { calcTenantScore } from '../../../src/utils/tenantScore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -230,6 +231,8 @@ export default function TenantHomeScreen() {
       playSound('paid');
       queryClient.invalidateQueries({ queryKey: ['tenant-current-payment', user?.id] });
       queryClient.invalidateQueries({ queryKey: ['tenant-payments', user?.id] });
+      const ownerId = (connectionRequest?.owner_id as string) ?? null;
+      if (ownerId) sendPush(ownerId, '💰 Payment Proof Received', `${tenantProfile?.full_name || 'Your tenant'} has uploaded rent payment proof.`);
     },
     onError: (err: any) => { if (err.message !== 'cancelled') AppAlert.alert('Error', err.message); },
   });
@@ -248,6 +251,8 @@ export default function TenantHomeScreen() {
     onSuccess: () => {
       playSound('notification');
       queryClient.invalidateQueries({ queryKey: ['tenant-current-payment', user?.id] });
+      const ownerId = (connectionRequest?.owner_id as string) ?? null;
+      if (ownerId) sendPush(ownerId, '💡 Services Proof Received', `${tenantProfile?.full_name || 'Your tenant'} has uploaded utilities payment proof.`);
     },
     onError: (err: any) => AppAlert.alert('Error', err.message),
   });
@@ -256,7 +261,12 @@ export default function TenantHomeScreen() {
   useEffect(() => {
     setupNotificationChannels();
     requestNotificationPermissions();
+    configureForegroundNotifications();
   }, []);
+
+  useEffect(() => {
+    if (user?.id) registerPushToken(user.id);
+  }, [user?.id]);
 
   // Play in-app sounds + schedule background notifications for due dates
   const soundPlayedForPayment = useRef<string | null>(null);
@@ -410,6 +420,8 @@ export default function TenantHomeScreen() {
       setDisconnectModalVisible(false);
       setDisconnectReason('');
       queryClient.invalidateQueries({ queryKey: ['tenant-connection', user?.id] });
+      const ownerId = (connectionRequest?.owner_id as string) ?? null;
+      if (ownerId) sendPush(ownerId, '🔔 Disconnection Request', `${tenantProfile?.full_name || 'Your tenant'} has requested to disconnect from the property.`);
     },
     onError: (error: any) => {
       AppAlert.alert(t.common.error, error.message || 'Failed to disconnect. Please try again.');

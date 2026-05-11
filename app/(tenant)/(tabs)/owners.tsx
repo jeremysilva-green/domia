@@ -21,6 +21,7 @@ import { Card, Button, ConfirmDialog } from '../../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../../src/constants/theme';
 import { useI18n } from '../../../src/i18n';
 import { AppAlert } from '../../../src/components/ui/AppAlert';
+import { sendPush } from '../../../src/utils/pushNotifications';
 
 type PropertyItem = {
   id: string;
@@ -210,9 +211,11 @@ export default function OwnersListScreen() {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['my-connection-requests'] });
       queryClient.invalidateQueries({ queryKey: ['tenant-connection'] });
+      // Notify owner of new connection request
+      sendPush(variables.ownerId, '🔔 New Connection Request', `${tenantProfile?.full_name || 'A tenant'} has sent you a connection request.`);
       setDialog({
         title: t.owners.requestSent,
         message: t.owners.requestSentMsg,

@@ -20,6 +20,7 @@ import { Button, Input } from '../../../src/components/ui';
 import { colors, spacing, typography, borderRadius } from '../../../src/constants/theme';
 import { MaintenanceCategory, MaintenanceUrgency } from '../../../src/types';
 import { AppAlert } from '../../../src/components/ui/AppAlert';
+import { sendPush } from '../../../src/utils/pushNotifications';
 
 export default function NewTenantMaintenanceScreen() {
   const { t } = useI18n();
@@ -97,6 +98,9 @@ export default function NewTenantMaintenanceScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tenant-maintenance-requests'] });
       queryClient.invalidateQueries({ queryKey: ['maintenance-requests'] });
+      if (connection?.owner_id) {
+        sendPush(connection.owner_id, '🔧 New Maintenance Request', `${tenantProfile?.full_name || 'Your tenant'} submitted a new maintenance request: ${title.trim()}`);
+      }
       setSubmitted(true);
     },
     onError: (error: any) => {

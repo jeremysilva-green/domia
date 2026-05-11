@@ -32,6 +32,7 @@ import { CURRENCIES, Currency, getCurrencySymbol, getCurrencyLabel, formatMonthl
 import { prefillPhone } from '../../../src/utils/phoneCountryCode';
 import { playSound } from '../../../src/utils/sounds';
 import { setupNotificationChannels, requestNotificationPermissions } from '../../../src/utils/notificationScheduler';
+import { registerPushToken, sendPush, configureForegroundNotifications } from '../../../src/utils/pushNotifications';
 import { AppAlert } from '../../../src/components/ui/AppAlert';
 
 // ============================================
@@ -836,8 +837,11 @@ function NotificationsContent() {
       queryClient.invalidateQueries({ queryKey: ['pending-connections-count'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       setShowUnitModal(false);
+      // Notify tenant their request was approved
+      if (selectedRequest?.tenant_id) {
+        sendPush(selectedRequest.tenant_id, '✅ Connection Approved', 'Your connection request has been approved. Welcome!');
+      }
       setSelectedRequest(null);
-
       AppAlert.alert(t.common.success, t.notifications.approvalSuccess);
     },
     onError: (error: any) => AppAlert.alert(t.common.error, errorMessage(error, t)),
@@ -854,6 +858,10 @@ function NotificationsContent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['connection-requests'] });
       queryClient.invalidateQueries({ queryKey: ['pending-connections-count'] });
+      // Notify tenant their request was declined
+      if (rejectDialog?.request?.tenant_id) {
+        sendPush(rejectDialog.request.tenant_id, '❌ Connection Declined', 'Your connection request was not approved. Please contact your landlord.');
+      }
       setInfoDialog({ title: t.common.done, message: t.notifications.declineSuccess });
     },
     onError: (error: any) => AppAlert.alert(t.common.error, errorMessage(error, t)),
@@ -878,33 +886,41 @@ function NotificationsContent() {
   });
 
   const confirmPaymentMutation = useMutation({
-    mutationFn: async ({ paymentId, amountDue }: { paymentId: string; amountDue: number }) => {
+    mutationFn: async ({ paymentId, amountDue, tenantId }: { paymentId: string; amountDue: number; tenantId?: string }) => {
       const today = new Date().toISOString().split('T')[0];
       const { error } = await supabase
         .from('rent_payments')
         .update({ status: 'paid', paid_date: today, proof_seen_by_owner: true, amount_paid: amountDue })
         .eq('id', paymentId);
       if (error) throw error;
+      return { tenantId };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       playSound('paid');
       queryClient.invalidateQueries({ queryKey: ['owner-payment-proofs', owner?.id] });
       queryClient.invalidateQueries({ queryKey: ['unseen-payment-proofs-count', owner?.id] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      if (result?.tenantId) {
+        sendPush(result.tenantId, '✅ Payment Confirmed', 'Your rent payment has been confirmed by your landlord.');
+      }
     },
   });
 
   const confirmServicesProofMutation = useMutation({
-    mutationFn: async (paymentId: string) => {
+    mutationFn: async ({ paymentId, tenantId }: { paymentId: string; tenantId?: string }) => {
       const { error } = await supabase
         .from('rent_payments')
         .update({ services_proof_seen_by_owner: true } as any)
         .eq('id', paymentId);
       if (error) throw error;
+      return { tenantId };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['owner-payment-proofs', owner?.id] });
       queryClient.invalidateQueries({ queryKey: ['unseen-payment-proofs-count', owner?.id] });
+      if (result?.tenantId) {
+        sendPush(result.tenantId, '✅ Services Confirmed', 'Your utilities payment has been confirmed by your landlord.');
+      }
     },
   });
 
@@ -1187,7 +1203,7 @@ function NotificationsContent() {
                           <Button
                             title={t.payments.markPaid}
                             size="sm"
-                            onPress={() => confirmPaymentMutation.mutate({ paymentId: payment.id, amountDue: payment.amount_due || payment.tenant?.rent_amount || 0 })}
+                            onPress={() => confirmPaymentMutation.mutate({ paymentId: payment.id, amountDue: payment.amount_due || payment.tenant?.rent_amount || 0, tenantId: payment.tenant?.id })}
                             loading={confirmPaymentMutation.isPending}
                             style={contentStyles.actionButton}
                           />
@@ -1206,7 +1222,7 @@ function NotificationsContent() {
                           <Button
                             title={t.common.confirm}
                             size="sm"
-                            onPress={() => confirmServicesProofMutation.mutate(payment.id)}
+                            onPress={() => confirmServicesProofMutation.mutate({ paymentId: payment.id, tenantId: payment.tenant?.id })}
                             loading={confirmServicesProofMutation.isPending}
                             style={contentStyles.actionButton}
                           />
@@ -1859,7 +1875,12 @@ export default function TabsLayout() {
     });
     setupNotificationChannels();
     requestNotificationPermissions();
+    configureForegroundNotifications();
   }, []);
+
+  useEffect(() => {
+    if (owner?.id) registerPushToken(owner.id);
+  }, [owner?.id]);
 
   // Global real-time subscription — lives here so it's always active regardless of which tab is open
   useEffect(() => {
