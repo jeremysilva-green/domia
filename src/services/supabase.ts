@@ -3,12 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { Database } from '../types/database.types';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
-
-if (!process.env.EXPO_PUBLIC_SUPABASE_URL) {
-  console.warn('EXPO_PUBLIC_SUPABASE_URL is not set. Please configure your .env file.');
-}
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://heiotmgiryajmtvfltmh.supabase.co';
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_1TskAtY4-uWS927OnQEIKQ__jz0VIs9';
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
