@@ -161,10 +161,11 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
         },
       } as any);
 
-      // Start the safety timeout only AFTER the billing UI has been shown.
-      // Starting it earlier (before fetchProducts + requestPurchase) was too short
-      // for testers who take time on the Google Play dialog.
+      // Safety timeout — only fires if the purchase listener never completed.
+      // Guard with isPurchasing check because the listener may have already
+      // resolved before requestPurchase() returned (race on some devices).
       timeout = setTimeout(() => {
+        if (!get().isPurchasing) return;
         set({ isPurchasing: false });
         onError('Purchase timed out. Please check your Google Play account and try again.');
       }, 60000);
